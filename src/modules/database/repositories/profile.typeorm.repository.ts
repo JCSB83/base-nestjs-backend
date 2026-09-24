@@ -12,7 +12,7 @@ export class ProfileTypeOrmRepository {
         private profileRepository: Repository<ProfileEntity>
     ) {}
     
-    async exists(profileId: string, isActive: boolean, logId?: string): Promise<boolean>{
+    async exists(profileId: string, isActive: boolean, logId: string): Promise<boolean>{
         Logger.log(`[${logId}] ProfileRepository.exists`);
         try {
             const exist = await this.profileRepository.exists({ where: { profileId: profileId, isActive: isActive } });

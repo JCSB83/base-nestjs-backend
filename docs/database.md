@@ -96,7 +96,7 @@ En las entidades, las relaciones navegables son `UserEntity.profile`, `ProfileEn
 
 ## Repositorios exportados
 
-Los métodos son asíncronos. `logId` permite correlacionar sus mensajes de registro y es obligatorio salvo en `ProfileTypeOrmRepository.exists`. Las búsquedas individuales indicadas a continuación devuelven `undefined` cuando no encuentran un registro.
+Los métodos son asíncronos. `logId` permite correlacionar sus mensajes de registro y es obligatorio en todos los métodos públicos de los repositorios, incluido `ProfileTypeOrmRepository.exists`. Las búsquedas individuales indicadas a continuación devuelven `undefined` cuando no encuentran un registro.
 
 ### UserTypeOrmRepository
 
@@ -117,7 +117,7 @@ Las lecturas de usuarios no filtran por `isActive`. Aunque la columna `profile_i
 
 | Repositorio | Método | Retorno y comportamiento |
 | --- | --- | --- |
-| `ProfileTypeOrmRepository` | `exists(profileId, isActive, logId?)` | `Promise<boolean>`; comprueba ID y estado indicado. |
+| `ProfileTypeOrmRepository` | `exists(profileId, isActive, logId)` | `Promise<boolean>`; comprueba ID y estado indicado. |
 | `OptionTypeOrmRepository` | `search(logId)` | `Promise<OptionEntity[]>`; devuelve todas las opciones, sin filtrar por estado. |
 | `SessionTypeOrmRepository` | `create(sessionEntity, logId)` | `Promise<string>`; guarda la sesión y devuelve su ID. |
 | `SessionTypeOrmRepository` | `readBySessionId(sessionId, logId)` | `Promise<SessionEntity \| undefined>`; busca por ID. |
@@ -170,16 +170,19 @@ Los nombres completos de archivo incluyen el identificador como prefijo. La últ
 
 También crea un usuario activo `admin`, con correo `admin@base.com` y contraseña inicial `password123`, almacenada como hash. Esta credencial está definida en la migración y debe cambiarse antes de utilizar la aplicación en un entorno compartido.
 
-La vía de ejecución configurada en el proyecto es el arranque con `POSTGRES_MIGRATIONSRUN=true`. Actualmente no hay scripts de migraciones en `package.json` ni un archivo independiente que exporte un `DataSource` para la CLI. La reversión requiere preparar ese mecanismo y corregir los problemas de `down` descritos a continuación.
+La vía de ejecución configurada en el proyecto es el arranque con `POSTGRES_MIGRATIONSRUN=true`. Actualmente no hay scripts de migraciones en `package.json` ni un archivo independiente que exporte un `DataSource` para la CLI. La reversión requiere preparar ese mecanismo y revisar el `down` de la migración de datos descrito a continuación. El `down` de la migración de sesiones elimina `auth_session`.
+
+### Campos obligatorios del esquema
+
+Las migraciones de creación y las entidades coinciden en que `auth_user.last_name`, `auth_user.email` y `auth_user.phone` no admiten nulos. También es obligatorio `expires_at` en `auth_session` y `auth_user_refresh_token`. Estas restricciones no impiden guardar cadenas vacías en las columnas de texto ni comprueban que una fecha de vencimiento sea futura.
+
+Estas definiciones describen el esquema creado con los archivos actuales. Modificar una migración que ya fue ejecutada no actualiza por sí solo una base existente: para aplicar las nuevas restricciones en ese caso, se necesita una nueva migración de alteración y resolver previamente los valores nulos que pudiera haber. No se incluye actualmente una migración adicional para esa actualización.
 
 ## Particularidades de la implementación actual
 
 Estas diferencias son relevantes al modificar el esquema o intentar revertir migraciones:
 
 - `option_id` está declarado como `numeric` en `OptionEntity` y `ProfileOptionEntity`, pero las migraciones lo crean como `int`.
-- `auth_user.last_name`, `email` y `phone` admiten nulos en la migración, pero sus columnas de entidad están declaradas con `nullable: false`.
-- `expires_at` admite nulos en las migraciones de sesiones y tokens, pero no en sus entidades.
-- El método `down` de `CreateSessionTableMigration1763596800005` intenta eliminar `auth_user` en lugar de `auth_session`.
 - El método `down` de la migración de datos elimina todos los registros de las tablas indicadas, no solo los insertados por `up`. Además, elimina opciones antes de sus asociaciones y perfiles antes de usuarios, lo que puede producir errores de claves foráneas.
 - Las migraciones no declaran borrado en cascada en las claves foráneas. El borrado de un usuario con sesiones o tokens asociados puede fallar por esas referencias.
 - No se declaran restricciones únicas para `user_name` ni `email` en las entidades o migraciones actuales.

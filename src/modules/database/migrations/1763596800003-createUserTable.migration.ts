@@ -47,19 +47,19 @@ export class CreateUserTableMigration1763596800003 implements MigrationInterface
             name: 'last_name',
             type: 'varchar',
             length: '50',
-            isNullable: true,
+            isNullable: false,
           },
           {
             name: 'email',
             type: 'varchar',
             length: '320',
-            isNullable: true,
+            isNullable: false,
           },
           {
             name: 'phone',
             type: 'varchar',
             length: '15',
-            isNullable: true,
+            isNullable: false,
           },
           {
             name: 'is_active',
