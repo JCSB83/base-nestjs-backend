@@ -163,7 +163,7 @@ La renovación no requiere que siga existiendo la sesión de acceso anterior. Cu
 
 ### `LogoutUseCase`
 
-[`execute(sessionId, logId): Promise<void>`](../src/modules/auth/application/logout.usecase.ts) consulta la sesión por ID y solicita eliminar la sesión y el token de renovación asociados a su JTI. Si no encuentra la sesión lanza `UseCaseError` con mensaje vacío.
+[`execute(sessionId, logId): Promise<void>`](../src/modules/auth/application/logout.usecase.ts) consulta la sesión por ID y espera a que se eliminen la sesión y el token de renovación asociados a su JTI en una misma transacción. Si no encuentra la sesión lanza `UseCaseError` con mensaje vacío. La respuesta de éxito se devuelve después de completar el borrado; los errores de persistencia se propagan al controlador.
 
 ## Guards y permisos
 
@@ -228,7 +228,7 @@ El `JwtAuthGuard` utilizado por los controladores no extiende `AuthGuard('jwt')`
 | `getRefreshTokenByJTI(jti, logId)` | `IRefreshToken \| undefined` | Consulta del registro de renovación. |
 | `saveSession(session, logId)` | `string` | Guarda y devuelve el ID de sesión. |
 | `saveRefreshToken(refreshToken, logId)` | `string` | Guarda y devuelve el ID del registro de renovación. |
-| `deleteSessionAndRefreshToken(jti, logId)` | `void` | Inicia el borrado de ambos registros por JTI. |
+| `deleteSessionAndRefreshToken(jti, logId)` | `void` | Elimina ambos registros por JTI y espera a que finalice la transacción. |
 | `saveSessionAndRefreshToken(previousJti, session, refreshToken, logId)` | `void` | Guarda la pareja y espera la transacción; si recibe un JTI previo, elimina sus registros antes de insertar. |
 
 La implementación llama `previousJti` al primer argumento del guardado conjunto; el contrato conserva el nombre `previus_jti`. Ambos declaran `Promise<void>`. En el contrato, los parámetros de las búsquedas por JTI se llaman `token`, pero representan el identificador JTI, no el JWT completo.
@@ -241,10 +241,12 @@ Aunque `IUser.password` está declarado como obligatorio y el mapeo copia esa pr
 
 ## Persistencia, trazabilidad y límites actuales
 
-Las operaciones conjuntas de guardado y borrado llaman a `dataSource.transaction(...)` y pasan el mismo `EntityManager` a los repositorios participantes. Su comportamiento difiere:
+Las operaciones conjuntas de guardado y borrado utilizan `await dataSource.transaction(...)` y pasan el mismo `EntityManager` a los repositorios participantes. Los casos de uso esperan su finalización y reciben los errores de la transacción:
 
-- `saveSessionAndRefreshToken` utiliza `await dataSource.transaction(...)`. El inicio de sesión y la renovación esperan la finalización del guardado; los errores de la transacción se propagan al caso de uso. En la renovación, el borrado de la pareja anterior y la inserción de la nueva forman parte de esa misma transacción.
-- `deleteSessionAndRefreshToken` inicia la transacción sin esperar ni devolver su promesa. El `await` de `LogoutUseCase` no garantiza que el borrado haya terminado antes de responder y no recibe los rechazos posteriores de la transacción.
+- `saveSessionAndRefreshToken` guarda la sesión y el token de renovación. En la renovación, el borrado de la pareja anterior y la inserción de la nueva forman parte de esa misma transacción.
+- `deleteSessionAndRefreshToken` elimina la sesión y el token de renovación por JTI. `LogoutUseCase` espera a que se complete esta transacción antes de finalizar.
+
+Si una operación de la transacción falla, sus cambios se revierten. Las consultas previas de usuario, sesión o token se realizan fuera de estas transacciones; el flujo no incorpora bloqueo para coordinar solicitudes concurrentes.
 
 Las comprobaciones de acceso verifican la expiración del JWT, pero no comparan directamente la fecha actual con `expiresAt` persistido. `ValidateTokenUseCase` tampoco compara `session.userId` con `decoded.sub`; busca el usuario usando el sujeto del JWT. La renovación obtiene el usuario del registro de renovación, sin contrastar explícitamente ese ID con el `sub` recibido. No hay una tarea de limpieza de registros expirados en este módulo.
 

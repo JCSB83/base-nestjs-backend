@@ -114,7 +114,7 @@ export class AuthRepository implements IAuthRepository {
 
     async deleteSessionAndRefreshToken(jti: string, logId: string): Promise<void> {
         const dataSource = this.sessionRepository.getDataSource();
-        dataSource.transaction(async (manager) => {
+        await dataSource.transaction(async (manager) => {
             await this.sessionRepository.deleteByJTI(jti, manager, logId);
             await this.refreshTokenRepository.deleteByJTI(jti, manager, logId);
         });
