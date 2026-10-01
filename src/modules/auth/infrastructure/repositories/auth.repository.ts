@@ -47,7 +47,7 @@ export class AuthRepository implements IAuthRepository {
         if (!userEntity) {
             return undefined;
         }
-        const options = await this.optionRepository.search(logId);
+        const options = await this.optionRepository.searchActive(logId);
         return this.mapToIUser(userEntity, options);
     }
 
@@ -56,7 +56,7 @@ export class AuthRepository implements IAuthRepository {
         if (!userEntity) {
             return undefined;
         }
-        const options = await this.optionRepository.search(logId);
+        const options = await this.optionRepository.searchActive(logId);
         return this.mapToIUser(userEntity, options);
     }
 
@@ -136,7 +136,7 @@ export class AuthRepository implements IAuthRepository {
         return await this.refreshTokenRepository.create(refreshTokenEntity, undefined, logId);
     }
 
-    async saveSessionAndRefreshToken(previus_jti: string | undefined, session: ISession, refreshToken: IRefreshToken, logId: string): Promise<any> {
+    async saveSessionAndRefreshToken(previousJti: string | undefined, session: ISession, refreshToken: IRefreshToken, logId: string): Promise<void> {
         const sessionEntity = new SessionEntity();
         sessionEntity.userId = session.userId;
         sessionEntity.jti = session.jti;
@@ -148,10 +148,10 @@ export class AuthRepository implements IAuthRepository {
         refreshTokenEntity.expiresAt = refreshToken.expiresAt;
 
         const dataSource = this.sessionRepository.getDataSource();
-        dataSource.transaction(async (manager) => {
-            if (previus_jti) {
-                await this.sessionRepository.deleteByJTI(previus_jti, manager, logId);
-                await this.refreshTokenRepository.deleteByJTI(previus_jti, manager, logId);
+        await dataSource.transaction(async (manager) => {
+            if (previousJti) {
+                await this.sessionRepository.deleteByJTI(previousJti, manager, logId);
+                await this.refreshTokenRepository.deleteByJTI(previousJti, manager, logId);
             }
             await this.sessionRepository.create(sessionEntity, manager, logId);
             await this.refreshTokenRepository.create(refreshTokenEntity, manager, logId);

@@ -23,4 +23,13 @@ export class OptionTypeOrmRepository extends TypeOrmRepository {
             throw new RepositoryError('An error occurred while trying to check for the existence of the profile.', error, logId);
         }        
     }
+
+    async searchActive(logId: string): Promise<OptionEntity[]> {
+        Logger.log(`[${logId}] ProfileRepository.search`);
+        try {
+            return await this.optionRepository.find({ where: { isActive: true }});
+        } catch (error: any) {
+            throw new RepositoryError('An error occurred while trying to check for the existence of the profile.', error, logId);
+        }        
+    }
 }
