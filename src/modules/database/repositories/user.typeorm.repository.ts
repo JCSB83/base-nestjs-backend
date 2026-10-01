@@ -1,19 +1,22 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
+import { InjectDataSource } from "@nestjs/typeorm";
 import { UserEntity } from "../entities/user.entity";
 import appConfig from "src/app.config";
-import { Repository } from "typeorm";
+import { DataSource, Repository } from "typeorm";
 import { RepositoryError } from "src/modules/shared/errors/repository.error";
 import { Utils } from "src/modules/shared/utils/utils";
 import { ProfileTypeOrmRepository } from "./profile.typeorm.repository";
+import { TypeOrmRepository } from "./typeorm.repository";
 
 @Injectable()
-export class UserTypeOrmRepository{
-    constructor(
-        @InjectRepository(UserEntity, appConfig.postgres_connectionName) 
-        private readonly userRepository: Repository<UserEntity>,
-        private readonly profileRepository: ProfileTypeOrmRepository
-    ) {}
+export class UserTypeOrmRepository extends TypeOrmRepository {
+    private readonly userRepository: Repository<UserEntity>
+
+    constructor(@InjectDataSource(appConfig.postgres_connectionName) dataSource: DataSource,
+                private readonly profileRepository: ProfileTypeOrmRepository) {
+        super(dataSource);
+        this.userRepository = dataSource.manager.getRepository(UserEntity);
+    }
 
     async create(user: UserEntity, logId: string): Promise<string> {
         Logger.log(`[${logId}] UserRepository.create`);
@@ -30,6 +33,29 @@ export class UserTypeOrmRepository{
                 throw error;
             }
             throw new RepositoryError('An error occurred while trying to create the user.', error, logId);
+        }
+    }
+    
+    async readActiveByUserId(userId: string, logId: string): Promise<UserEntity | undefined> {
+        Logger.log(`[${logId}] UserRepository.readActiveByUserId`);
+        try {
+            const user = await this.userRepository.findOne({ 
+                where: { 
+                    userId: userId,
+                    isActive: true,
+                }, 
+                relations: {
+                    profile: {
+                        profileOptions: true
+                    }
+                }
+            });
+            if (user === null) {
+                return undefined;
+            }
+            return user;
+        } catch (error: any) {
+            throw new RepositoryError('An error occurred while trying to get the active user.', error, logId);
         }
     }
 

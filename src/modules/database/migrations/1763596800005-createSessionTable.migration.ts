@@ -9,7 +9,7 @@ export class CreateSessionTableMigration1763596800005 implements MigrationInterf
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.createTable(
             new Table({
-                name: 'auth_session',
+                name: 'auth_user_session',
                 columns: [
                     {
                         name: 'session_id',
@@ -25,8 +25,9 @@ export class CreateSessionTableMigration1763596800005 implements MigrationInterf
                         isNullable: false,
                     },
                     {
-                        name: 'token',
+                        name: 'jti',
                         type: 'varchar',
+                        length: '36',
                         isNullable: false,
                     },
                     {
@@ -37,10 +38,11 @@ export class CreateSessionTableMigration1763596800005 implements MigrationInterf
                 ],
                 foreignKeys: [
                     new TableForeignKey({
-                        name: 'auth_session_user_fk',
+                        name: 'auth_user_session_user_fk',
                         columnNames: ['user_id'],
                         referencedTableName: 'auth_user',
                         referencedColumnNames: ['user_id'],
+                        onDelete: 'CASCADE'
                     }),
                 ],
             }),

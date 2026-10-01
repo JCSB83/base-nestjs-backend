@@ -21,20 +21,29 @@ export class AuthRepository implements IAuthRepository {
                 private readonly refreshTokenRepository: RefreshTokenTypeOrmRepository,
                 private readonly optionRepository: OptionTypeOrmRepository) {}
 
-    async getRefreshTokenByToken(token: string, logId: string): Promise<IRefreshToken | undefined> {
-        const refreshTokenEntity = await this.refreshTokenRepository.readByToken(token, logId);
+    async getRefreshTokenByJTI(jti: string, logId: string): Promise<IRefreshToken | undefined> {
+        const refreshTokenEntity = await this.refreshTokenRepository.readByJTI(jti, logId);
         if (!refreshTokenEntity) {
             return undefined;
         }
         return {
             userId: refreshTokenEntity.userId,
-            token: refreshTokenEntity.token,
+            jti: refreshTokenEntity.jti,
             expiresAt: refreshTokenEntity.expiresAt
         }
     }
 
     async getUserByUserId(userId: string, logId: string): Promise<IUser | undefined> {
         const userEntity = await this.userRepository.readByUserId(userId, logId);
+        if (!userEntity) {
+            return undefined;
+        }
+        const options = await this.optionRepository.search(logId);
+        return this.mapToIUser(userEntity, options);
+    }
+
+    async getActiveUserByUserId(userId: string, logId: string): Promise<IUser | undefined> {
+        const userEntity = await this.userRepository.readActiveByUserId(userId, logId);
         if (!userEntity) {
             return undefined;
         }
@@ -77,40 +86,75 @@ export class AuthRepository implements IAuthRepository {
         return user;
     }
 
-    async getSessionByToken(token: string, logId: string): Promise<ISession | undefined> {
-        const sessionEntity = await this.sessionRepository.readByToken(token, logId);
+    async getSessionByJTI(jti: string, logId: string): Promise<ISession | undefined> {
+        const sessionEntity = await this.sessionRepository.readByJTI(jti, logId);
         if (!sessionEntity) {
             return undefined;
         }
         return {
             sessionId: sessionEntity.sessionId,
             userId: sessionEntity.userId,
-            token: sessionEntity.token,
+            jti: sessionEntity.jti,
             expiresAt: sessionEntity.expiresAt
         };
     }
 
-    async deleteSessionBySessionId(sessionId: string, logId: string): Promise<void> {
+    async getSessionById(sessionId: string, logId: string): Promise<ISession | undefined> {
         const sessionEntity = await this.sessionRepository.readBySessionId(sessionId, logId);
-        if(!sessionEntity) {
-            throw new Error();
+        if (!sessionEntity) {
+            return undefined;
         }
-        await this.sessionRepository.delete(sessionEntity.sessionId, logId);
+        return {
+            sessionId: sessionEntity.sessionId,
+            userId: sessionEntity.userId,
+            jti: sessionEntity.jti,
+            expiresAt: sessionEntity.expiresAt
+        };
+    }
+
+    async deleteSessionAndRefreshToken(jti: string, logId: string): Promise<void> {
+        const dataSource = this.sessionRepository.getDataSource();
+        dataSource.transaction(async (manager) => {
+            await this.sessionRepository.deleteByJTI(jti, manager, logId);
+            await this.refreshTokenRepository.deleteByJTI(jti, manager, logId);
+        });
     }
 
     async saveSession(session: ISession, logId: string): Promise<string> {
         const sessionEntity = new SessionEntity();
         sessionEntity.userId = session.userId;
-        sessionEntity.token = session.token;
+        sessionEntity.jti = session.jti;
         sessionEntity.expiresAt = session.expiresAt;
-        return await this.sessionRepository.create(sessionEntity, logId);
+        return await this.sessionRepository.create(sessionEntity, undefined, logId);
     }
 
     async saveRefreshToken(refreshToken: IRefreshToken, logId: string): Promise<string> {
         const refreshTokenEntity = new RefreshTokenEntity();
         refreshTokenEntity.userId = refreshToken.userId;
-        refreshTokenEntity.token = refreshToken.token;
+        refreshTokenEntity.jti = refreshToken.jti;
         refreshTokenEntity.expiresAt = refreshToken.expiresAt;
-        return await this.refreshTokenRepository.create(refreshTokenEntity, logId);
+        return await this.refreshTokenRepository.create(refreshTokenEntity, undefined, logId);
+    }
+
+    async saveSessionAndRefreshToken(previus_jti: string | undefined, session: ISession, refreshToken: IRefreshToken, logId: string): Promise<any> {
+        const sessionEntity = new SessionEntity();
+        sessionEntity.userId = session.userId;
+        sessionEntity.jti = session.jti;
+        sessionEntity.expiresAt = session.expiresAt;
+
+        const refreshTokenEntity = new RefreshTokenEntity();
+        refreshTokenEntity.userId = refreshToken.userId;
+        refreshTokenEntity.jti = refreshToken.jti;
+        refreshTokenEntity.expiresAt = refreshToken.expiresAt;
+
+        const dataSource = this.sessionRepository.getDataSource();
+        dataSource.transaction(async (manager) => {
+            if (previus_jti) {
+                await this.sessionRepository.deleteByJTI(previus_jti, manager, logId);
+                await this.refreshTokenRepository.deleteByJTI(previus_jti, manager, logId);
+            }
+            await this.sessionRepository.create(sessionEntity, manager, logId);
+            await this.refreshTokenRepository.create(refreshTokenEntity, manager, logId);
+        });
     }
 }

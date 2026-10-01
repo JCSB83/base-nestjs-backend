@@ -1,5 +1,5 @@
 export interface IRefreshToken {
     userId: string;
-    token: string;
+    jti: string;
     expiresAt: Date;
 }

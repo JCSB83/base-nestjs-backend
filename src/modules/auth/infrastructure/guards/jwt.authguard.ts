@@ -30,7 +30,7 @@ export class JwtAuthGuard implements CanActivate {
         }
         try {
             const validateTokenResult = await this.validateTokenUseCase.execute(token, logId);
-            if (!validateTokenResult || !validateTokenResult.user || validateTokenResult.user.isActive === false) {
+            if (!validateTokenResult || !validateTokenResult.user) {
                 throw new UnauthorizedException('Invalid or inactive user.');
             }
             request.logId = logId;

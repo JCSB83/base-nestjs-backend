@@ -17,15 +17,17 @@ export class ValidateTokenUseCase {
     async execute(token: string, logId: string): Promise<{ user: IUser | undefined, session: ISession } | undefined> {
         Logger.log(`[${logId}] ValidateTokenUseCase.execute`);
         let decoded: any = undefined;
+        let jti: string;
         try {
             decoded = this.jwtService.verify(token, { secret: appConfig.jwtSecret });
+            jti = decoded.jti;
         } catch (error: any) {
             throw new UseCaseError('', error, logId);
         }
         try {
-            const session = await this.authRepository.getSessionByToken(token, logId);
+            const session = await this.authRepository.getSessionByJTI(jti, logId);
             if (session) {
-                const user = await this.authRepository.getUserByUserId(decoded.sub, logId);
+                const user = await this.authRepository.getActiveUserByUserId(decoded.sub, logId);
                 return { user, session };
             }
         } catch (error: any) {

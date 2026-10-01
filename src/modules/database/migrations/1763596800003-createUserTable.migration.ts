@@ -91,7 +91,7 @@ export class CreateUserTableMigration1763596800003 implements MigrationInterface
         columnNames: ['profile_id'],
         referencedTableName: 'auth_profile',
         referencedColumnNames: ['profile_id'],
-      }),
+      })
     ]);
   }
 

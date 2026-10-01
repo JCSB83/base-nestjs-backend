@@ -25,8 +25,9 @@ export class CreateRefreshTokenTableMigration1763596800004 implements MigrationI
                         isNullable: false,
                     },
                     {
-                        name: 'token',
+                        name: 'jti',
                         type: 'varchar',
+                        length: '36',
                         isNullable: false,
                     },
                     {
@@ -41,6 +42,7 @@ export class CreateRefreshTokenTableMigration1763596800004 implements MigrationI
                         columnNames: ['user_id'],
                         referencedTableName: 'auth_user',
                         referencedColumnNames: ['user_id'],
+                        onDelete: 'CASCADE'
                     }),
                 ],
             }),

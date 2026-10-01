@@ -25,7 +25,7 @@ export class AuthController {
             const accessDto = await this.loginUseCase.execute(loginDto, req.logId);
             req.logData = false;
             return new ResponseDto({
-                statusCode: 200,
+                statusCode: 201,
                 logId: req.logId,
                 message: 'login successful',
                 data: accessDto
@@ -89,7 +89,7 @@ export class AuthController {
                     message: 'refresh token failed',
                     error: ''
                 }),
-                error.status || 500,
+                500
             );
         }
     }
@@ -115,7 +115,7 @@ export class AuthController {
                     message: 'logout failed',
                     error: ''
                 }),
-                error.status || 500,
+                500
             );
         }
     }

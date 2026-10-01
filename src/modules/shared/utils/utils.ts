@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 export class Utils {
   static async createHash(text: string): Promise<string> {
     const encoder = new TextEncoder();
@@ -16,4 +18,9 @@ export class Utils {
       .padStart(8, '0');
     return randomNumber;
   }
+
+  static generateJti(): string {
+    return randomUUID();
+  }
 }
+

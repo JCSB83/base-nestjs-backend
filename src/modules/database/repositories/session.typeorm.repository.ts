@@ -1,22 +1,26 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { RepositoryError } from "src/modules/shared/errors/repository.error";
-import { Repository } from "typeorm";
+import { DataSource, EntityManager, Repository } from "typeorm";
 import { SessionEntity } from "../entities/session.entity";
-import { InjectRepository } from "@nestjs/typeorm";
+import { InjectDataSource } from "@nestjs/typeorm";
 import appConfig from "src/app.config";
 import { DeleteResult } from "typeorm/browser";
+import { TypeOrmRepository } from "./typeorm.repository";
 
 @Injectable()
-export class SessionTypeOrmRepository {
-    constructor(
-        @InjectRepository(SessionEntity, appConfig.postgres_connectionName) 
-        private readonly sessionRepository: Repository<SessionEntity>
-    ) {}
+export class SessionTypeOrmRepository extends TypeOrmRepository {
+    private readonly sessionRepository: Repository<SessionEntity>
 
-    async create(sessionEntity: SessionEntity, logId: string): Promise<string> {
+    constructor(@InjectDataSource(appConfig.postgres_connectionName) dataSource: DataSource) {
+        super(dataSource);
+        this.sessionRepository = dataSource.manager.getRepository(SessionEntity);
+    }
+
+    async create(sessionEntity: SessionEntity, manager: EntityManager | undefined, logId: string): Promise<string> {
         Logger.log(`[${logId}] SessionRepository.create`);
         try {
-            const newSessionEntity = await this.sessionRepository.save(sessionEntity);
+            const repository = !manager ? this.sessionRepository : manager.getRepository(SessionEntity);
+            const newSessionEntity = await repository.save(sessionEntity);
             Logger.log(`[${logId}] Session sessionId "${newSessionEntity.sessionId}" created for userId "${newSessionEntity.userId}"`);
             return newSessionEntity.sessionId;
         } catch (error: any) {
@@ -37,10 +41,10 @@ export class SessionTypeOrmRepository {
         }
     }
 
-    async readByToken(token: string, logId: string): Promise<SessionEntity | undefined> {
+    async readByJTI(jti: string, logId: string): Promise<SessionEntity | undefined> {
         Logger.log(`[${logId}] SessionRepository.readByToken`);
         try {
-            const session = await this.sessionRepository.findOne({ where: { token: token } });
+            const session = await this.sessionRepository.findOne({ where: { jti } });
             if (session === null) {
                 return undefined;
             }
@@ -51,9 +55,19 @@ export class SessionTypeOrmRepository {
     }
 
     async delete(sessionId: string, logId: string): Promise<DeleteResult> {
-        Logger.log(`[${logId}] SessionRepository.readByToken`);
+        Logger.log(`[${logId}] SessionRepository.delete`);
         try {
             return await this.sessionRepository.delete(sessionId);
+        } catch (error: any) {
+            throw new RepositoryError('An error occurred while trying to delete the session.', error, logId);
+        }
+    }
+
+    async deleteByJTI(jti: string, manager: EntityManager | undefined, logId: string): Promise<DeleteResult> {
+        Logger.log(`[${logId}] SessionRepository.delete`);
+        try {
+            const repository = !manager ? this.sessionRepository : manager.getRepository(SessionEntity);
+            return await repository.delete({ jti });
         } catch (error: any) {
             throw new RepositoryError('An error occurred while trying to delete the session.', error, logId);
         }

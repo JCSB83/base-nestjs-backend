@@ -1,6 +1,6 @@
 export interface ISession {
     sessionId?: string;
     userId: string;
-    token: string;
+    jti: string;
     expiresAt: Date;
 }

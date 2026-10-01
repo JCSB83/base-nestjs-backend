@@ -6,8 +6,8 @@ export class RefreshTokenEntity {
   refreshTokenId!: string;
   @Column('uuid', { name: 'user_id', nullable: false })
   userId!: string;
-  @Column({ name: 'token', nullable: false })
-  token!: string;
+  @Column({ name: 'jti', nullable: false, length: 36 })
+  jti!: string;
   @Column({ name: 'expires_at', nullable: false })
   expiresAt!: Date;
 }

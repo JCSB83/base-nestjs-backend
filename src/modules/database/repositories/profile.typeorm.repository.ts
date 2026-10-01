@@ -1,17 +1,20 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
+import { InjectDataSource } from "@nestjs/typeorm";
 import { RepositoryError } from "src/modules/shared/errors/repository.error";
 import { ProfileEntity } from "../entities/profile.entity";
-import { Repository } from "typeorm";
+import { DataSource, Repository } from "typeorm";
 import appConfig from "src/app.config";
+import { TypeOrmRepository } from "./typeorm.repository";
 
 @Injectable()
-export class ProfileTypeOrmRepository {
-    constructor(
-        @InjectRepository(ProfileEntity, appConfig.postgres_connectionName)
-        private profileRepository: Repository<ProfileEntity>
-    ) {}
-    
+export class ProfileTypeOrmRepository extends TypeOrmRepository {
+    private readonly profileRepository: Repository<ProfileEntity>
+
+    constructor(@InjectDataSource(appConfig.postgres_connectionName) dataSource: DataSource) {
+        super(dataSource);
+        this.profileRepository = dataSource.manager.getRepository(ProfileEntity);
+    }
+
     async exists(profileId: string, isActive: boolean, logId: string): Promise<boolean>{
         Logger.log(`[${logId}] ProfileRepository.exists`);
         try {

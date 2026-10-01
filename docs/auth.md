@@ -1,237 +1,250 @@
-# Módulo Auth
+# Módulo de autenticación
 
-El módulo `AuthModule` implementa el inicio de sesión, la renovación de tokens, la consulta del usuario autenticado y el cierre de sesión. Utiliza JWT y almacena sesiones y tokens de renovación en PostgreSQL mediante [DatabaseModule](database.md).
-
-La autenticación de las rutas protegidas requiere tanto un JWT válido como una sesión persistida y un usuario activo. Los permisos se obtienen del perfil del usuario al consultar la base de datos; no se incluyen en el JWT.
+[`src/modules/auth`](../src/modules/auth) implementa el inicio de sesión, la renovación de tokens, la consulta del usuario autenticado y el cierre de sesión. Combina JWT con registros de sesión en PostgreSQL: para acceder a una ruta protegida, el token debe ser válido, su JTI debe tener una sesión registrada y el usuario debe estar activo.
 
 ## Estructura e integración
 
 ```text
 src/modules/auth/
 ├── auth.module.ts
-├── application/                 # Login, logout, renovación y validación
+├── application/              # Login, logout, renovación y validación
 ├── domain/
-│   ├── models/                  # IUser, ISession e IRefreshToken
-│   └── repositories/            # Contrato IAuthRepository
+│   ├── models/               # IUser, ISession e IRefreshToken
+│   └── repositories/         # Contrato IAuthRepository
 └── infrastructure/
-    ├── controllers/             # AuthController
-    ├── dto/                     # Entradas y par de tokens de salida
-    ├── guards/                  # JwtAuthGuard y PermissionsGuard
-    ├── repositories/            # Adaptador AuthRepository
-    └── strategies/              # Estrategia Passport JWT
+    ├── controllers/          # API HTTP
+    ├── dto/                  # Entrada y salida
+    ├── guards/               # Autenticación y permisos
+    ├── repositories/         # Adaptación a los repositorios de database
+    └── strategies/           # Estrategia JWT de Passport
 ```
 
-[AuthModule](../src/modules/auth/auth.module.ts) importa `DatabaseModule`, `PassportModule` y `JwtModule`. Registra `AuthRepository` bajo el símbolo `AUTH_REPOSITORY`, los cuatro casos de uso, `JwtStrategy` y `JwtAuthGuard`. Exporta `JwtAuthGuard` y `ValidateTokenUseCase`. Al inicializarse registra `AuthModule initialized`.
+[`AuthModule`](../src/modules/auth/auth.module.ts) importa `DatabaseModule`, `PassportModule` y `JwtModule`. Registra los cuatro casos de uso, `JwtStrategy`, `JwtAuthGuard` y el proveedor `{ provide: AUTH_REPOSITORY, useClass: AuthRepository }`. El token `AUTH_REPOSITORY` es un `Symbol` que permite inyectar la implementación del contrato de persistencia.
 
-`PermissionsGuard` se utiliza mediante `@UseGuards`, pero no figura entre los proveedores ni las exportaciones de `AuthModule`. El decorador `Permissions` está en [src/common/decorators/permissions.decorator.ts](../src/common/decorators/permissions.decorator.ts).
+El módulo expone `JwtAuthGuard` y `ValidateTokenUseCase`. No registra guards globales. Al inicializarse escribe `AuthModule initialized` en el logger. El esquema y los repositorios de persistencia se describen en [database.md](database.md).
 
-## Configuración
+## Configuración de JWT
 
-[AppConfig](../src/app.config.ts) carga las variables de entorno con `dotenv` y convierte las duraciones con `Number`.
+Los valores proceden de [`app.config.ts`](../src/app.config.ts), que carga el entorno mediante `dotenv`.
 
-| Variable | Valor predeterminado | Uso |
+| Variable | Propiedad | Valor predeterminado |
 | --- | --- | --- |
-| `JWT_SECRET` | `mi_secret_key` | Firma y verificación del access token. |
-| `JWT_EXPIRESIN` | `900000` | Duración del access token, en segundos. |
-| `JWT_REFRESH_SECRET` | `mi_refresh_secret_key` | Firma y verificación del refresh token. |
-| `JWT_REFRESH_EXPIRESIN` | `3600000` | Duración del refresh token, en segundos. |
+| `JWT_SECRET` | `jwtSecret` | `mi_secret_key` |
+| `JWT_EXPIRESIN` | `jwtExpiresIn` | `900000` |
+| `JWT_REFRESH_SECRET` | `jwtRefreshSecret` | `mi_refresh_secret_key` |
+| `JWT_REFRESH_EXPIRESIN` | `jwtRefreshExpiresIn` | `3600000` |
 
-Los valores numéricos enviados a `expiresIn` se interpretan en segundos. Aunque los comentarios de `AppConfig` indican 15 minutos y 1 hora, los valores actuales equivalen a 10 días y 10 horas, y a 41 días y 16 horas, respectivamente. `example.env` contiene esos mismos valores.
+Las duraciones se convierten mediante `Number` y se pasan directamente a `JwtService.sign` como `expiresIn`. La dependencia instalada interpreta los valores numéricos en **segundos**. Por tanto, los valores predeterminados representan 250 y 1000 horas respectivamente, aunque los comentarios de `AppConfig` indican 15 minutos y una hora. Para esas duraciones, los valores numéricos serían `900` y `3600`. La configuración actual no admite expresiones como `15m`, porque intenta convertirlas a número.
 
-Para configurar 15 minutos de acceso y 1 hora de renovación:
+Los tokens de acceso se firman con `jwtSecret` y los de renovación con `jwtRefreshSecret`. Ambos contienen:
 
-```dotenv
-JWT_SECRET=reemplazar_por_un_secreto_de_acceso
-JWT_EXPIRESIN=900
-JWT_REFRESH_SECRET=reemplazar_por_otro_secreto_de_renovacion
-JWT_REFRESH_EXPIRESIN=3600
-```
+| Campo | Contenido |
+| --- | --- |
+| `username` | Nombre de acceso del usuario. |
+| `sub` | Identificador del usuario. |
+| `jti` | UUID generado por `Utils.generateJti()`. |
+| `iat` | Fecha de emisión agregada por la biblioteca JWT. |
+| `exp` | Fecha de expiración calculada al firmar. |
 
-Los secretos del ejemplo son marcadores para sustituir. Las duraciones deben ser números; cadenas como `15m` no son compatibles con la conversión actual de `AppConfig`.
-
-La base de datos debe estar configurada y disponer del esquema de autenticación. La preparación y los datos iniciales se describen en [database.md](database.md).
+Cada pareja de tokens comparte el mismo JTI. Los permisos no forman parte del payload: se consultan en la base de datos. Para persistir la expiración se convierte `exp`, expresado en segundos, a `Date` mediante `new Date(exp * 1000)`.
 
 ## API HTTP
 
-El [controlador](../src/modules/auth/infrastructure/controllers/auth.controller.ts) utiliza el prefijo `/api/auth`. Aplica `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true })`: las entradas que no cumplen el DTO y las propiedades adicionales en los cuerpos validados producen HTTP 400.
+El controlador [`AuthController`](../src/modules/auth/infrastructure/controllers/auth.controller.ts) utiliza la ruta base `/api/auth`.
 
-| Método y ruta | Autenticación | Entrada | Respuesta exitosa |
-| --- | --- | --- | --- |
-| `POST /api/auth/login` | Pública | `userName` y `password` en JSON | HTTP 201; par de tokens en `data`. |
-| `GET /api/auth/info` | Access token Bearer | Sin cuerpo | HTTP 200; usuario y permisos en `data`. |
-| `POST /api/auth/refresh` | Refresh token en el cuerpo | `token` en JSON | HTTP 200; par de tokens en `data`. |
-| `DELETE /api/auth/logout` | Access token Bearer | Sin cuerpo | HTTP 200; mensaje de cierre de sesión. |
+| Método y ruta | Autenticación | Entrada | HTTP de éxito | `data` |
+| --- | --- | --- | --- | --- |
+| `POST /api/auth/login` | Pública | `LoginDto` | `201` | `AccessDto` con ambos tokens. |
+| `POST /api/auth/refresh` | Pública; valida el token recibido | `RefreshDto` | `200` | Nueva pareja de tokens. |
+| `GET /api/auth/info` | `JwtAuthGuard` | Cabecera Bearer | `200` | Usuario cargado en `req.user`. |
+| `DELETE /api/auth/logout` | `JwtAuthGuard` | Cabecera Bearer; sin cuerpo requerido | `200` | Sin datos. |
 
-Las respuestas del controlador usan [ResponseDto](../src/modules/shared/utils/infrastructure/response.dto.ts), con `statusCode`, `logId`, `message` y, según corresponda, `data` o `error`. Los campos con valor `undefined` se omiten al serializar JSON.
+Las respuestas del controlador usan [`ResponseDto`](../src/modules/shared/utils/infrastructure/response.dto.ts), cuyos campos son `statusCode`, `logId`, `title`, `message`, `error` y `data`. Los campos opcionales no asignados se omiten al serializar a JSON.
 
-### Iniciar sesión
-
-`LoginDto` exige `userName` y `password` definidos, de tipo string, no vacíos y con un máximo de 64 caracteres cada uno.
+### Inicio de sesión
 
 ```http
 POST /api/auth/login
 Content-Type: application/json
 
 {
-  "userName": "mi_usuario",
-  "password": "mi_clave"
+  "userName": "usuario",
+  "password": "clave"
 }
 ```
 
-Respuesta de ejemplo:
+[`LoginDto`](../src/modules/auth/infrastructure/dto/login.dto.ts) exige que ambos campos estén definidos, sean cadenas no vacías y tengan como máximo 64 caracteres.
+
+Respuesta de éxito, HTTP `201`:
 
 ```json
 {
-  "statusCode": 200,
+  "statusCode": 201,
   "logId": "12345678",
   "message": "login successful",
   "data": {
-    "accessToken": "<access-token>",
-    "refreshToken": "<refresh-token>"
+    "accessToken": "<JWT de acceso>",
+    "refreshToken": "<JWT de renovación>"
   }
 }
 ```
 
-El estado HTTP efectivo es **201**, porque el método POST no declara `@HttpCode(200)`. El `statusCode` del cuerpo es **200**.
-
-`LoginUseCase` busca al usuario mediante el repositorio, que compara la contraseña calculando su hash SHA-256. Si lo encuentra, firma ambos tokens con el payload `{ username: user.userName, sub: user.userId }`, guarda la sesión y después el refresh token, y devuelve `AccessDto`. Las fechas persistidas se calculan a partir de `exp * 1000`.
-
-### Consultar el usuario autenticado
-
-```http
-GET /api/auth/info
-Authorization: Bearer <access-token>
-```
-
-Devuelve `req.user` en `data`, con `message: ""`. Incluye `userId`, `userName`, nombres, correo, teléfono, `isActive`, fechas disponibles, `profileId` y `permissions`.
-
-Aunque la firma del controlador declara `ResponseDto<AccessDto>`, el contenido real es el usuario. La interfaz `IUser` declara `password`, pero las lecturas actuales de `UserEntity` excluyen esa columna mediante `select: false`; normalmente queda `undefined` y no aparece en el JSON.
-
-### Renovar tokens
+### Renovación
 
 ```http
 POST /api/auth/refresh
 Content-Type: application/json
 
 {
-  "token": "<refresh-token>"
+  "token": "<JWT de renovación>"
 }
 ```
 
-`RefreshDto` exige un `token` de tipo string y no vacío. La respuesta tiene la misma estructura de tokens que login, con `message: "refresh token successful"` y HTTP 200.
+[`RefreshDto`](../src/modules/auth/infrastructure/dto/refresh.dto.ts) requiere una cadena no vacía llamada `token`. No requiere un token de acceso en la cabecera. La respuesta usa `statusCode: 200`, el mensaje `refresh token successful` y un [`AccessDto`](../src/modules/auth/infrastructure/dto/access.dto.ts) con `accessToken` y `refreshToken` nuevos.
 
-`RefreshTokenUseCase` verifica el JWT con `JWT_REFRESH_SECRET`, busca el token exacto en la base de datos y obtiene al usuario asociado al registro. Luego firma y persiste otro access token y otro refresh token. El registro de renovación anterior y las sesiones anteriores permanecen almacenados; no hay invalidación del token utilizado.
+### Información y cierre de sesión
 
-### Cerrar sesión
+Ambas operaciones requieren la cabecera:
 
 ```http
-DELETE /api/auth/logout
-Authorization: Bearer <access-token>
+Authorization: Bearer <JWT de acceso>
 ```
 
-`JwtAuthGuard` obtiene `req.sessionId` y `LogoutUseCase` solicita su eliminación. La respuesta contiene `statusCode: 200`, `logId` y `message: "logout successful"`, sin `data`.
+`GET /api/auth/info` devuelve el usuario con sus datos de perfil y su arreglo de códigos de permisos, tal como lo construye `AuthRepository`. No devuelve una nueva pareja de tokens. Aunque la firma del método declara `ResponseDto<AccessDto>`, su contenido real es `req.user`.
 
-La operación no recibe un token en el cuerpo. Existe `LogoutDto`, pero el controlador no lo utiliza. El cierre elimina únicamente la sesión identificada; no revoca los refresh tokens ni otras sesiones del usuario.
+`DELETE /api/auth/logout` obtiene `sessionId` de la petición, asignado previamente por el guard. Devuelve el mensaje `logout successful` y no incluye `data` en el JSON. El cierre afecta a la pareja asociada al JTI de esa sesión, no a todas las sesiones del usuario. Como la ruta exige un token de acceso válido, un token expirado es rechazado antes de ejecutar el cierre.
 
-## Validación de acceso
+### Validación y errores HTTP
 
-```mermaid
-sequenceDiagram
-    participant C as Cliente
-    participant G as JwtAuthGuard
-    participant V as ValidateTokenUseCase
-    participant R as AuthRepository
-    C->>G: Authorization: Bearer access-token
-    G->>V: execute(token, logId)
-    V->>V: Verificar firma y expiración JWT
-    V->>R: Buscar sesión por token
-    V->>R: Consultar usuario por sub y sus permisos
-    R-->>V: Usuario y sesión
-    V-->>G: Resultado de validación
-    G->>G: Exigir usuario existente y activo
-    G-->>C: Continuar al controlador o responder 401
-```
+El controlador aplica `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true })`. Los cuerpos inválidos o con propiedades adicionales se rechazan con HTTP `400` antes de ejecutar el método. Esos errores usan el formato de NestJS, no el `ResponseDto` construido por el controlador.
 
-[JwtAuthGuard](../src/modules/auth/infrastructure/guards/jwt.authguard.ts) implementa `CanActivate` directamente. Exige el prefijo exacto `Bearer ` y delega en `ValidateTokenUseCase`. Si la validación tiene éxito, asigna `request.user`, `request.sessionId` y `request.logId`.
+| Situación | Resultado actual |
+| --- | --- |
+| Credenciales incorrectas o error dentro de `login` | HTTP `500`, `message: "login failed"`, `error: ""`. |
+| Error dentro de `refresh` | HTTP `500`, `message: "refresh token failed"`. |
+| Error dentro de `logout` | HTTP `500`, `message: "logout failed"`. |
+| Error dentro del método `info` | HTTP `500`, mensaje y error vacíos. |
+| Cabecera ausente o mal formada, token inválido, sesión ausente o usuario inactivo en una ruta protegida | HTTP `401` desde `JwtAuthGuard`. |
+| Permisos insuficientes en una ruta con `PermissionsGuard` | HTTP `403`. |
 
-`ValidateTokenUseCase.execute(token, logId)` devuelve `{ user, session }` si encuentra una sesión, y `undefined` si no la encuentra. La propiedad `user` también puede ser `undefined`; corresponde al guard rechazar ese resultado y comprobar `isActive`. El caso de uso no compara explícitamente `session.userId` con `sub` ni comprueba `session.expiresAt`: verifica la expiración del JWT.
+En los errores de `refresh` y `logout`, el cuerpo usa `statusCode: error.status || 500`, pero el segundo argumento de `HttpException` es siempre `500`; si el error tuviera otro `status`, el cuerpo y el estado HTTP podrían diferir. Los errores de guards ocurren antes del controlador y no pasan por sus bloques `catch`.
 
-La [estrategia Passport](../src/modules/auth/infrastructure/strategies/jwt.strategy.ts) está registrada y devuelve `{ userId: payload.sub, username: payload.username }`. El guard utilizado por estos endpoints no extiende `AuthGuard('jwt')` y no usa esa estrategia; su flujo incluye la consulta de sesión en la base de datos.
+## Casos de uso
 
-## Autorización por permisos
+### `LoginUseCase`
 
-`AuthRepository` transforma las asociaciones `profile.profileOptions` en códigos de permisos, consultando `OptionTypeOrmRepository`. Solo incorpora opciones con `isActive=true`. El estado activo del perfil no se comprueba durante ese mapeo.
+[`execute(loginDto, logId): Promise<AccessDto>`](../src/modules/auth/application/login.usecase.ts):
 
-`PermissionsGuard` lee la metadata del método y, en su ausencia, la del controlador. La metadata del método reemplaza la del controlador. Si no hay permisos requeridos, permite continuar. Si los hay, exige que `request.user.permissions` contenga **todos** los códigos indicados; de lo contrario, devuelve `false`, produciendo HTTP 403.
+1. Busca el usuario por nombre y contraseña a través de `IAuthRepository`.
+2. Si no existe, lanza `UseCaseError('User not found')`.
+3. Genera un JTI y firma los tokens de acceso y renovación.
+4. Construye `ISession` e `IRefreshToken` con sus respectivas expiraciones.
+5. Solicita `saveSessionAndRefreshToken(undefined, session, refreshToken, logId)` y devuelve ambos JWT.
 
-Ejemplo de protección de una ruta, siguiendo el patrón de `UsersController`:
+La comprobación de contraseña se delega al repositorio de usuarios de `database`, que calcula SHA-256 sin sal con `Utils.createHash`. Esa búsqueda no filtra por `isActive`, y el caso de uso tampoco lo comprueba: el inicio de sesión puede emitir tokens para un usuario inactivo, aunque el guard y la renovación sí exigen un usuario activo.
+
+### `ValidateTokenUseCase`
+
+[`execute(token, logId)`](../src/modules/auth/application/validateToken.usecase.ts) verifica firma y expiración con `jwtSecret`, busca la sesión por el JTI y, si existe, consulta el usuario activo por `decoded.sub`.
+
+Devuelve `{ user, session }` cuando encuentra la sesión; `user` puede ser `undefined`. Si no hay sesión devuelve `undefined`. Los errores se envuelven en `UseCaseError`. El guard es quien exige que el resultado incluya un usuario.
+
+### `RefreshTokenUseCase`
+
+[`execute(refresh_token, logId): Promise<AccessDto>`](../src/modules/auth/application/refreshToken.usecase.ts):
+
+1. Verifica el JWT recibido con `jwtRefreshSecret`.
+2. Busca el registro de renovación por su JTI.
+3. Busca el usuario activo usando el `userId` del registro persistido.
+4. Genera un JTI nuevo y firma otra pareja de tokens.
+5. Solicita guardar los registros nuevos y eliminar los anteriores mediante `saveSessionAndRefreshToken`, pasando el JTI previo.
+
+La renovación no requiere que siga existiendo la sesión de acceso anterior. Cuando la transacción termina correctamente, los registros del JTI anterior desaparecen y las peticiones posteriores con ese JTI dejan de superar las comprobaciones de persistencia. La implementación no incluye bloqueo o consumo condicional del token para coordinar renovaciones simultáneas.
+
+### `LogoutUseCase`
+
+[`execute(sessionId, logId): Promise<void>`](../src/modules/auth/application/logout.usecase.ts) consulta la sesión por ID y solicita eliminar la sesión y el token de renovación asociados a su JTI. Si no encuentra la sesión lanza `UseCaseError` con mensaje vacío.
+
+## Guards y permisos
+
+### `JwtAuthGuard`
+
+[`JwtAuthGuard`](../src/modules/auth/infrastructure/guards/jwt.authguard.ts) implementa `CanActivate` directamente. Genera un `logId`, exige que `authorization` comience con la cadena exacta `Bearer ` y toma el token con `split(' ')[1]`.
+
+Tras ejecutar `ValidateTokenUseCase`, exige un usuario válido y asigna:
+
+| Campo de la petición | Valor |
+| --- | --- |
+| `request.logId` | Identificador generado para la operación. |
+| `request.user` | Usuario activo con sus permisos actuales. |
+| `request.sessionId` | ID de la sesión encontrada. |
+
+Los errores de cabecera conservan mensajes específicos: `Authorization header is missing.`, `Invalid authorization header format.` y `Token is missing.`. Dentro del bloque de validación, el guard contempla `TokenExpiredError` y `JsonWebTokenError`, pero el caso de uso los envuelve en `UseCaseError`; por ello normalmente termina respondiendo `Unauthorized.`. También reemplaza por ese mensaje el rechazo interno `Invalid or inactive user.`.
+
+### `PermissionsGuard`
+
+[`PermissionsGuard`](../src/modules/auth/infrastructure/guards/permissions.guard.ts) lee los metadatos del decorador [`Permissions`](../src/common/decorators/permissions.decorator.ts), bajo la clave `permissions`. Los metadatos del método tienen prioridad sobre los de la clase; no se combinan.
+
+Si no hay permisos exigidos, permite continuar. Si los hay, requiere `request.user` y comprueba con `every` que el usuario tenga **todos** los códigos solicitados. Los permisos ausentes se interpretan como un arreglo vacío.
+
+Uso existente en [`UsersController`](../src/modules/users/infrastructure/controllers/users.controller.ts):
 
 ```typescript
-import { Controller, Get, Module, Req, UseGuards } from '@nestjs/common';
-import type { Request } from 'express';
-import { AuthModule } from 'src/modules/auth/auth.module';
-import { JwtAuthGuard } from 'src/modules/auth/infrastructure/guards/jwt.authguard';
-import { PermissionsGuard } from 'src/modules/auth/infrastructure/guards/permissions.guard';
-import { Permissions } from 'src/common/decorators/permissions.decorator';
-
-@Controller('api/example')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-export class ExampleController {
-  @Get()
-  @Permissions('USER_READ')
-  read(@Req() req: Request) {
-    return req.user;
-  }
+@Controller('api/users')
+export class UsersController {
+  // En el método correspondiente:
+  // @Permissions('USER_READ')
 }
-
-@Module({
-  imports: [AuthModule],
-  controllers: [ExampleController],
-})
-export class ExampleModule {}
 ```
 
-El orden permite que `JwtAuthGuard` establezca el usuario antes de evaluar permisos. `@Permissions` por sí solo no ejecuta la validación. Los endpoints propios de autenticación no utilizan `PermissionsGuard`.
+El orden permite que el guard JWT cargue el usuario antes de comprobar permisos. `UsersModule` importa `AuthModule`. `PermissionsGuard` se aplica por clase mediante `@UseGuards`; no figura entre los proveedores ni las exportaciones explícitas de `AuthModule`.
 
-## Contratos y persistencia
+### Estrategia Passport
 
-[IAuthRepository](../src/modules/auth/domain/repositories/auth.repository.interface.ts) define el contrato inyectado en los casos de uso:
+[`JwtStrategy`](../src/modules/auth/infrastructure/strategies/jwt.strategy.ts) está registrada y extrae el token Bearer, verifica con `jwtSecret` y mantiene `ignoreExpiration: false`. Su método `validate` devuelve únicamente `{ userId: payload.sub, username: payload.username }`.
 
-| Método | Retorno | Propósito |
-| --- | --- | --- |
-| `getUserByUsernameAndPassword(userName, password, logId)` | `Promise<IUser \| undefined>` | Buscar credenciales y mapear permisos. |
-| `getUserByUserId(userId, logId)` | `Promise<IUser \| undefined>` | Obtener usuario y permisos actuales. |
-| `getSessionByToken(token, logId)` | `Promise<ISession \| undefined>` | Buscar una sesión por el access token exacto. |
-| `getRefreshTokenByToken(token, logId)` | `Promise<IRefreshToken \| undefined>` | Buscar un refresh token persistido. |
-| `saveSession(session, logId)` | `Promise<string>` | Insertar una sesión y devolver su ID. |
-| `saveRefreshToken(refreshToken, logId)` | `Promise<string>` | Insertar un refresh token y devolver su ID. |
-| `deleteSessionBySessionId(sessionId, logId)` | `Promise<void>` | Comprobar la sesión y eliminarla. |
+El `JwtAuthGuard` utilizado por los controladores no extiende `AuthGuard('jwt')` ni invoca esa estrategia: usa `ValidateTokenUseCase`. La estrategia por sí sola no consulta sesiones, estado del usuario ni permisos, por lo que no equivale al flujo del guard personalizado.
 
-`ISession` contiene `sessionId?`, `userId`, `token` y `expiresAt`. `IRefreshToken` contiene `userId`, `token` y `expiresAt`. Los tokens se guardan completos en `auth_session` y `auth_user_refresh_token`. El adaptador utiliza los repositorios de usuarios, opciones, sesiones y tokens del módulo database.
+## Modelos y repositorio de dominio
 
-## Errores y registros
-
-| Situación | Comportamiento actual |
+| Modelo | Campos |
 | --- | --- |
-| DTO inválido o propiedades adicionales | HTTP 400, respuesta estándar de validación de Nest. |
-| Credenciales incorrectas o error en login | HTTP 500, `message: "login failed"`, `error: ""`. |
-| Cabecera ausente, formato incorrecto o token ausente | HTTP 401 con el mensaje correspondiente del guard. |
-| Token inválido, vencido, sesión ausente, usuario inexistente/inactivo o error de persistencia durante la validación | HTTP 401; normalmente `Unauthorized.`. |
-| Refresh token inválido, vencido, inexistente o usuario no encontrado | Normalmente HTTP 500, `message: "refresh token failed"`. |
-| Permisos insuficientes en una ruta que aplica `PermissionsGuard` | HTTP 403. |
+| [`IUser`](../src/modules/auth/domain/models/user.interface.ts) | `userId`, `userName`, `password`, `firstName`, `middleName?`, `lastName`, `email`, `phone`, `isActive`, `createdAt`, `updatedAt`, `profileId`, `permissions?`. |
+| [`ISession`](../src/modules/auth/domain/models/session.interface.ts) | `sessionId?`, `userId`, `jti`, `expiresAt`. |
+| [`IRefreshToken`](../src/modules/auth/domain/models/refreshToken.interface.ts) | `userId`, `jti`, `expiresAt`. |
 
-`UseCaseError` no define un estado HTTP. En refresh, el controlador utiliza `error.status || 500`. Durante la validación del access token, los errores JWT quedan envueltos en `UseCaseError`, por lo que las ramas del guard que distinguen `TokenExpiredError` y `JsonWebTokenError` normalmente no reciben esos errores directamente.
+`expiresAt`, `createdAt` y `updatedAt` representan fechas (`updatedAt` admite `undefined`). El identificador primario del registro de renovación no forma parte de `IRefreshToken`.
 
-Las respuestas de guards y del pipe no usan necesariamente `ResponseDto`. El `logId` lo genera el guard para rutas protegidas y el interceptor global para las públicas. En las respuestas exitosas, el controlador establece `req.logData=false` para omitir el cuerpo de respuesta en el registro del interceptor.
+[`IAuthRepository`](../src/modules/auth/domain/repositories/auth.repository.interface.ts) define el contrato implementado por [`AuthRepository`](../src/modules/auth/infrastructure/repositories/auth.repository.ts). Todos sus métodos reciben `logId` como último argumento.
 
-## Particularidades de la implementación actual
+| Método | Retorno asíncrono | Función |
+| --- | --- | --- |
+| `getUserByUserId(userId, logId)` | `IUser \| undefined` | Consulta sin filtrar estado. |
+| `getActiveUserByUserId(userId, logId)` | `IUser \| undefined` | Consulta de usuario activo. |
+| `getUserByUsernameAndPassword(userName, password, logId)` | `IUser \| undefined` | Búsqueda por credenciales. |
+| `getSessionByJTI(jti, logId)` | `ISession \| undefined` | Consulta de sesión por JTI. |
+| `getSessionById(sessionId, logId)` | `ISession \| undefined` | Consulta de sesión por clave primaria. |
+| `getRefreshTokenByJTI(jti, logId)` | `IRefreshToken \| undefined` | Consulta del registro de renovación. |
+| `saveSession(session, logId)` | `string` | Guarda y devuelve el ID de sesión. |
+| `saveRefreshToken(refreshToken, logId)` | `string` | Guarda y devuelve el ID del registro de renovación. |
+| `deleteSessionAndRefreshToken(jti, logId)` | `void` | Inicia el borrado de ambos registros por JTI. |
+| `saveSessionAndRefreshToken(previus_jti, session, refreshToken, logId)` | `any` | Inicia el guardado de la pareja; si recibe un JTI previo, elimina sus registros antes de insertar. |
 
-- Login y refresh no rechazan explícitamente usuarios inactivos antes de emitir tokens. El bloqueo por `isActive=false` ocurre al usar una ruta protegida por `JwtAuthGuard`.
-- Renovar tokens no revoca los anteriores. Un refresh token persistido puede reutilizarse mientras supere la verificación JWT, incluso después del logout de una sesión.
-- `LogoutUseCase` captura y descarta las excepciones. El endpoint puede informar éxito aunque la eliminación haya fallado.
-- El guard consulta permisos en cada validación; los cambios en las opciones y asociaciones se obtienen de la base de datos, sin depender de permisos incluidos en un JWT.
-- Guardar la sesión y guardar el refresh token son operaciones separadas, sin una transacción conjunta en los casos de uso. Un fallo en la segunda puede dejar la primera persistida.
-- No se comparan las fechas `expiresAt` persistidas al validar acceso o renovar; la expiración efectiva se verifica con el JWT. El módulo no implementa limpieza automática de registros vencidos.
-- Los payloads no incluyen un identificador único de token (`jti`). Emisiones para el mismo usuario dentro del mismo segundo pueden producir tokens iguales si coinciden payload, secreto y duración.
+El nombre `previus_jti` conserva la escritura del código. En el contrato, los parámetros de las búsquedas por JTI se llaman `token`, pero representan el identificador JTI, no el JWT completo.
 
-Esta documentación describe el código actual; no implica una comprobación de los flujos contra una base de datos en ejecución.
+El adaptador utiliza los repositorios de usuarios, sesiones, tokens y opciones de `database`. Al mapear un usuario recorre `profile.profileOptions`, busca cada opción por ID y agrega su `code` solo si la opción está activa. No comprueba `profile.isActive` ni otorga privilegios implícitos por `isInternal`. Sin asignaciones de perfil, devuelve `permissions: []`.
+
+Aunque `IUser.password` está declarado como obligatorio y el mapeo copia esa propiedad, `UserEntity.password` tiene `select: false`; las consultas ordinarias no lo cargan y normalmente queda `undefined`, por lo que se omite en JSON.
+
+## Persistencia, trazabilidad y límites actuales
+
+Las operaciones conjuntas de guardado y borrado llaman a `dataSource.transaction(...)` y pasan el mismo `EntityManager` a los repositorios participantes. Sin embargo, **no esperan ni devuelven la promesa de la transacción**. En consecuencia, el `await` del caso de uso no garantiza que la transacción haya terminado antes de responder, y los rechazos posteriores no se propagan por ese `await`. Esto afecta al inicio de sesión, la renovación y el cierre de sesión.
+
+Las comprobaciones de acceso verifican la expiración del JWT, pero no comparan directamente la fecha actual con `expiresAt` persistido. `ValidateTokenUseCase` tampoco compara `session.userId` con `decoded.sub`; busca el usuario usando el sujeto del JWT. La renovación obtiene el usuario del registro de renovación, sin contrastar explícitamente ese ID con el `sub` recibido. No hay una tarea de limpieza de registros expirados en este módulo.
+
+[`UseCaseError`](../src/modules/shared/errors/usecase.error.ts) conserva el error original en `innerError` y registra su mensaje. Login y logout propagan los `RepositoryError` existentes; renovación y validación los envuelven en `UseCaseError`. Muchos errores de caso de uso tienen mensaje vacío, y el controlador no expone sus detalles.
+
+El [`LogInterceptor`](../src/modules/shared/interceptors/log.interceptor.ts), registrado globalmente en `main.ts`, conserva el `logId` establecido por el guard o genera uno para las rutas públicas. Los endpoints de autenticación asignan `req.logData = false` al responder correctamente para evitar registrar los datos de la respuesta. Se mantienen los registros de ruta, estado y duración.
+
+Estas descripciones corresponden al código actual y distinguen el flujo implementado de sus limitaciones; no implican cambios en la lógica de autenticación.

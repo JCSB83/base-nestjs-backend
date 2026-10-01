@@ -9,6 +9,7 @@ import { ISession } from '../domain/models/session.interface';
 import { IRefreshToken } from '../domain/models/refreshToken.interface';
 import { AccessDto } from '../infrastructure/dto/access.dto';
 import { LoginDto } from '../infrastructure/dto/login.dto';
+import { Utils } from 'src/modules/shared/utils/utils';
 
 @Injectable()
 export class LoginUseCase {
@@ -26,32 +27,33 @@ export class LoginUseCase {
             }
             Logger.log(`[${logId}] User "${user.userName}" found`);
 
-            const payload = { username: user.userName, sub: user.userId };
+            const jti = Utils.generateJti();
+            const payload = { username: user.userName, sub: user.userId, jti };
             const strAccessToken = this.jwtService.sign(payload, {
                 expiresIn: appConfig.jwtExpiresIn,
                 secret: appConfig.jwtSecret
             });
-            const decodedAccessToken = this.jwtService.decode(strAccessToken);
-            const strRefreshToken = this.jwtService.sign(payload, {
+            const refreshPayload = { username: user.userName, sub: user.userId, jti };
+            const strRefreshToken = this.jwtService.sign(refreshPayload, {
                 expiresIn: appConfig.jwtRefreshExpiresIn,
                 secret: appConfig.jwtRefreshSecret
             });
 
-            const decodedRefreshToken = this.jwtService.decode(strRefreshToken);
+            const decodedAccessToken = this.jwtService.decode(strAccessToken);
             const session: ISession = {
                 sessionId: undefined,
                 userId: user.userId,
-                token: strAccessToken,
+                jti: payload.jti,
                 expiresAt: new Date(decodedAccessToken.exp * 1000)
             };
-            await this.authRepository.saveSession(session, logId);
-
+            
+            const decodedRefreshToken = this.jwtService.decode(strRefreshToken);
             const refreshToken: IRefreshToken = {
                 userId: user.userId,
-                token: strRefreshToken,
+                jti: refreshPayload.jti,
                 expiresAt: new Date(decodedRefreshToken.exp * 1000)
             }
-            await this.authRepository.saveRefreshToken(refreshToken, logId);
+            await this.authRepository.saveSessionAndRefreshToken(undefined, session, refreshToken, logId);
 
             const accessDto = new AccessDto();
             accessDto.accessToken = strAccessToken;
