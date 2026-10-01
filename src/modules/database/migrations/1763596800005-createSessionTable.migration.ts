@@ -50,6 +50,6 @@ export class CreateSessionTableMigration1763596800005 implements MigrationInterf
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.dropTable('auth_session');
+        await queryRunner.dropTable('auth_user_session');
     }
 }

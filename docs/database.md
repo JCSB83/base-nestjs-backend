@@ -276,11 +276,23 @@ npm run start:dev
 
 Para código compilado, los scripts son `npm run build` y `npm run start:prod`. El proyecto no incluye scripts específicos de CLI para generar, ejecutar o revertir migraciones, ni un archivo independiente de `DataSource` para ese fin.
 
+### Reversión
+
+Los métodos `down` de las seis migraciones de estructura eliminan la tabla creada por su respectivo `up`. En particular, la migración de sesiones elimina `auth_user_session`.
+
+El `down` de `1763596800006-insertDataTable.migration.ts` elimina los datos en este orden:
+
+1. `auth_profile_option`: asignaciones de permisos a perfiles.
+2. `auth_option`: opciones de permisos.
+3. `auth_user`: usuarios; sus sesiones y tokens se eliminan en cascada.
+4. `auth_profile`: perfiles.
+
+Este orden elimina primero los registros dependientes y respeta las claves foráneas definidas en las migraciones. La operación utiliza `deleteAll`, sin filtrar por los identificadores o nombres de la carga inicial.
+
 ### Diferencias y limitaciones actuales
 
 - `option_id` es `int` en las migraciones y `numeric` en las entidades `OptionEntity` y `ProfileOptionEntity`.
 - Las claves foráneas de sesiones y tokens hacia usuarios, y de asignaciones hacia opciones, existen en las migraciones pero no como relaciones de entidad. La sincronización y las migraciones no describen exactamente el mismo esquema.
-- El `down` de `1763596800005-createSessionTable.migration.ts` intenta eliminar `auth_session`, aunque `up` crea `auth_user_session`.
-- El `down` de la carga inicial ejecuta `deleteAll` sobre opciones, asignaciones, perfiles y usuarios, en ese orden. No se limita a los registros insertados por `up`, y puede fallar por eliminar opciones antes que sus asignaciones y perfiles antes que usuarios.
+- El `down` de la carga inicial usa `deleteAll`: elimina todos los registros de las tablas implicadas, no solo los insertados por `up`. El borrado de usuarios también elimina sus sesiones y tokens por las claves foráneas con `ON DELETE CASCADE`.
 
 Estas diferencias describen el código actual y deben considerarse al sincronizar el esquema o revertir migraciones.

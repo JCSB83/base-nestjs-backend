@@ -61,9 +61,9 @@ export class InsertDataTableMigration1763596800006 implements MigrationInterface
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.manager.deleteAll(OptionEntity);
         await queryRunner.manager.deleteAll(ProfileOptionEntity);
-        await queryRunner.manager.deleteAll(ProfileEntity);
+        await queryRunner.manager.deleteAll(OptionEntity);
         await queryRunner.manager.deleteAll(UserEntity);
+        await queryRunner.manager.deleteAll(ProfileEntity);
     }
 }
