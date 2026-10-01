@@ -7,11 +7,9 @@ import { SearchUserUseCase } from "./application/searchUser.usecase";
 import { UpdateUserUseCase } from "./application/updateUser.usecase";
 import { AuthModule } from "../auth/auth.module";
 import { USER_REPOSITORY, UsersRepository } from "./infrastructure/repositories/users.repository";
-import { DatabaseModule } from "../database/database.module";
 
 @Module({
     imports: [
-        DatabaseModule,
         AuthModule
     ],
     controllers: [

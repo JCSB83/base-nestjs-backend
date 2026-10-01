@@ -1,45 +1,60 @@
 # Módulo de base de datos
 
-El código se encuentra en [`src/modules/database`](../src/modules/database), no en `src/database`. Implementa la persistencia en PostgreSQL mediante TypeORM y NestJS para usuarios, perfiles, permisos, sesiones y tokens de actualización.
+[`src/modules/database`](../src/modules/database) implementa la persistencia en PostgreSQL mediante TypeORM. Contiene la configuración de conexión, las entidades, los repositorios y las migraciones para usuarios, perfiles, opciones de permisos, sesiones y tokens de renovación.
 
 ## Estructura e integración
 
 ```text
 src/modules/database/
 ├── database.module.ts
-├── entities/       # Mapeo de clases a tablas
-├── migrations/     # Creación del esquema y carga inicial
-└── repositories/   # Operaciones de persistencia
+├── entities/       # Seis entidades que representan las tablas
+├── repositories/   # Repositorio base y cinco proveedores de persistencia
+└── migrations/     # Creación del esquema y carga inicial
 ```
 
-[`DatabaseModule`](../src/modules/database/database.module.ts) configura la conexión con `TypeOrmModule.forRoot`, registra las seis entidades con `TypeOrmModule.forFeature` y expone cinco proveedores: `UserTypeOrmRepository`, `ProfileTypeOrmRepository`, `OptionTypeOrmRepository`, `SessionTypeOrmRepository` y `RefreshTokenTypeOrmRepository`. No expone controladores ni un repositorio específico para `ProfileOptionEntity`.
+[`DatabaseModule`](../src/modules/database/database.module.ts) está decorado con `@Global()` y se importa en [`AppModule`](../src/app.module.ts). Una vez registrado, sus proveedores exportados están disponibles para los demás módulos sin que cada uno tenga que importarlo explícitamente.
 
-El módulo se importa desde [`AppModule`](../src/app.module.ts). Los módulos que necesiten sus proveedores deben importar `DatabaseModule`; no está declarado como global. Al inicializarse registra `DatabaseModule initialized` en el logger de NestJS.
+El módulo configura `TypeOrmModule.forRoot`, registra las seis entidades mediante `TypeOrmModule.forFeature` y exporta:
+
+- `UserTypeOrmRepository`.
+- `ProfileTypeOrmRepository`.
+- `OptionTypeOrmRepository`.
+- `SessionTypeOrmRepository`.
+- `RefreshTokenTypeOrmRepository`.
+
+No tiene controladores ni un repositorio específico para `ProfileOptionEntity`. Su método `onModuleInit` registra `DatabaseModule initialized` en el logger de NestJS.
 
 ## Configuración
 
-La conexión usa el singleton de [`app.config.ts`](../src/app.config.ts), que carga variables de entorno mediante `dotenv`.
+Los parámetros proceden de [`app.config.ts`](../src/app.config.ts), que carga variables de entorno mediante `dotenv`.
 
 | Variable | Valor predeterminado | Uso |
 | --- | --- | --- |
 | `POSTGRES_HOST` | Cadena vacía | Servidor PostgreSQL. |
-| `POSTGRES_PORT` | `0` | Puerto, convertido mediante `Number`. |
-| `POSTGRES_USERNAME` | Cadena vacía | Usuario de conexión. |
-| `POSTGRES_PASSWORD` | Cadena vacía | Contraseña de conexión. |
-| `POSTGRES_DATABASE` | Cadena vacía | Nombre de la base de datos. |
-| `POSTGRES_CONNECTIONNAME` | `default` | Nombre usado tanto al registrar como al inyectar la conexión. |
-| `POSTGRES_SYNCRONIZE` | `false` | Corresponde a `synchronize`; conserva la escritura utilizada en el código. |
-| `POSTGRES_LOGGING` | `false` | Activa el registro de TypeORM. |
-| `POSTGRES_MIGRATIONSRUN` | `false` | Ejecuta las migraciones pendientes al inicializar la conexión. |
-| `POSTGRES_MAXEXECUTIONTIME` | `30000` | Umbral en milisegundos para registrar consultas lentas; no es un tiempo límite de cancelación. |
+| `POSTGRES_PORT` | `0` | Puerto de conexión. |
+| `POSTGRES_USERNAME` | Cadena vacía | Usuario. |
+| `POSTGRES_PASSWORD` | Cadena vacía | Contraseña. |
+| `POSTGRES_DATABASE` | Cadena vacía | Base de datos. |
+| `POSTGRES_CONNECTIONNAME` | `default` | Nombre de la conexión registrada e inyectada. |
+| `POSTGRES_SYNCRONIZE` | `false` | Sincronización del esquema a partir de entidades. Conserva la escritura utilizada en el código. |
+| `POSTGRES_LOGGING` | `false` | Registro de operaciones de TypeORM. |
+| `POSTGRES_MIGRATIONSRUN` | `false` | Ejecución de migraciones pendientes al inicializar la conexión. |
+| `POSTGRES_MAXEXECUTIONTIME` | `30000` | Umbral en milisegundos para registrar consultas lentas; no cancela su ejecución. |
 
-Los booleanos solo se activan con las cadenas exactas `true` o `1`. Los valores numéricos no tienen validación adicional en `AppConfig`.
+Los booleanos solo se activan con las cadenas exactas `true` o `1`. Los parámetros numéricos se convierten mediante `Number`, sin validación adicional en `AppConfig`.
 
-El módulo descubre entidades con `entities/*.entity{.ts,.js}` y migraciones con `migrations/*.migration{.ts,.js}`, relativas a `__dirname`. También establece `autoLoadEntities: true`.
+Las rutas de descubrimiento son relativas a `__dirname`:
+
+```typescript
+migrations: [__dirname + '/migrations/*.migration{.ts,.js}']
+entities: [__dirname + '/entities/*.entity{.ts,.js}']
+```
+
+También se establece `autoLoadEntities: true`. Tanto `forFeature` como `@InjectDataSource` utilizan `appConfig.postgres_connectionName`.
 
 ## Modelo de datos
 
-El siguiente diagrama representa las claves foráneas creadas por las migraciones. No todas tienen una relación declarada en los decoradores de las entidades.
+El diagrama representa las claves foráneas creadas por las migraciones. Algunas no tienen una relación de objeto equivalente en las entidades.
 
 ```mermaid
 erDiagram
@@ -50,21 +65,21 @@ erDiagram
     auth_user ||--o{ auth_user_refresh_token : tiene
 ```
 
-Las tablas siguientes describen los tipos SQL de las migraciones y su correspondencia con las propiedades TypeScript. Salvo indicación contraria, las columnas no aceptan `NULL`.
+Las siguientes tablas usan los tipos SQL definidos en las migraciones. Las columnas son obligatorias salvo donde se indica que admiten `NULL`.
 
-### Opciones: `OptionEntity` → `auth_option`
+### `OptionEntity` → `auth_option`
 
 Fuente: [`option.entity.ts`](../src/modules/database/entities/option.entity.ts).
 
 | Propiedad | Columna | Tipo SQL | Detalle |
 | --- | --- | --- | --- |
-| `optionId` | `option_id` | `int` | Clave primaria, asignada explícitamente. La entidad declara `numeric`. |
+| `optionId` | `option_id` | `int` | Clave primaria asignada explícitamente; la entidad declara `numeric`. |
 | `code` | `code` | `varchar(50)` | Código del permiso. |
 | `name` | `name` | `varchar(50)` | Nombre. |
 | `description` | `description` | `varchar(100)` | Admite `NULL`. |
-| `isActive` | `is_active` | `boolean` | Estado. |
+| `isActive` | `is_active` | `boolean` | Estado de la opción. |
 
-### Perfiles: `ProfileEntity` → `auth_profile`
+### `ProfileEntity` → `auth_profile`
 
 Fuente: [`profile.entity.ts`](../src/modules/database/entities/profile.entity.ts).
 
@@ -80,18 +95,18 @@ Fuente: [`profile.entity.ts`](../src/modules/database/entities/profile.entity.ts
 
 `profileOptions` es una relación `OneToMany` con `ProfileOptionEntity`.
 
-### Asignación de permisos: `ProfileOptionEntity` → `auth_profile_option`
+### `ProfileOptionEntity` → `auth_profile_option`
 
 Fuente: [`profileOption.entity.ts`](../src/modules/database/entities/profileOption.entity.ts).
 
 | Propiedad | Columna | Tipo SQL | Detalle |
 | --- | --- | --- | --- |
-| `profileId` | `profile_id` | `uuid` | Clave foránea a `auth_profile`. |
-| `optionId` | `option_id` | `int` | Clave foránea a `auth_option`; la entidad declara `numeric`. |
+| `profileId` | `profile_id` | `uuid` | Clave foránea a `auth_profile.profile_id`. |
+| `optionId` | `option_id` | `int` | Clave foránea a `auth_option.option_id`; la entidad declara `numeric`. |
 
-La clave primaria es compuesta: `(profile_id, option_id)`. La entidad declara la relación `ManyToOne` llamada `profile`; no declara una relación de objeto con `OptionEntity`, aunque la migración sí crea su clave foránea.
+La clave primaria es compuesta: `(profile_id, option_id)`. La propiedad `profile` declara una relación `ManyToOne` con `ProfileEntity`. No hay una relación de objeto con `OptionEntity`, aunque la migración crea esa clave foránea.
 
-### Usuarios: `UserEntity` → `auth_user`
+### `UserEntity` → `auth_user`
 
 Fuente: [`user.entity.ts`](../src/modules/database/entities/user.entity.ts).
 
@@ -103,41 +118,41 @@ Fuente: [`user.entity.ts`](../src/modules/database/entities/user.entity.ts).
 | `firstName` | `first_name` | `varchar(50)` | Nombre. |
 | `middleName` | `middle_name` | `varchar(50)` | Admite `NULL`. |
 | `lastName` | `last_name` | `varchar(50)` | Apellido. |
-| `email` | `email` | `varchar(320)` | Correo electrónico. |
+| `email` | `email` | `varchar(320)` | Correo. |
 | `phone` | `phone` | `varchar(15)` | Teléfono. |
 | `isActive` | `is_active` | `boolean` | Estado. |
 | `createdAt` | `created_at` | `timestamp` | Fecha de creación. |
 | `updatedAt` | `updated_at` | `timestamp` | Admite `NULL`. |
-| `profileId` | `profile_id` | `uuid` | Admite `NULL`; clave foránea a `auth_profile`. |
+| `profileId` | `profile_id` | `uuid` | Admite `NULL`; clave foránea a `auth_profile.profile_id`. |
 
-`profile` es una relación `ManyToOne` opcional. Aunque el esquema admite usuarios sin perfil, los métodos `create` y `update` del repositorio comprueban la existencia de un perfil activo.
+La propiedad `profile` es una relación `ManyToOne` opcional. Aunque la columna admite `NULL`, los métodos de creación y actualización del repositorio comprueban la existencia de un perfil activo.
 
-### Sesiones y tokens de actualización
+### Sesiones y tokens de renovación
 
 Fuentes: [`session.entity.ts`](../src/modules/database/entities/session.entity.ts) y [`refreshToken.entity.ts`](../src/modules/database/entities/refreshToken.entity.ts).
 
-| Entidad / tabla | Propiedad de clave primaria | Columna de clave primaria |
+| Entidad | Tabla | Propiedad / columna de clave primaria |
 | --- | --- | --- |
-| `SessionEntity` / `auth_user_session` | `sessionId` | `session_id` |
-| `RefreshTokenEntity` / `auth_user_refresh_token` | `refreshTokenId` | `refresh_token_id` |
+| `SessionEntity` | `auth_user_session` | `sessionId` / `session_id` |
+| `RefreshTokenEntity` | `auth_user_refresh_token` | `refreshTokenId` / `refresh_token_id` |
 
-Ambas claves primarias son UUID generados. Las dos tablas contienen además:
+Ambas claves primarias son UUID generados. Las dos entidades tienen además:
 
 | Propiedad | Columna | Tipo SQL | Detalle |
 | --- | --- | --- | --- |
-| `userId` | `user_id` | `uuid` | Clave foránea obligatoria a `auth_user`. |
-| `jti` | `jti` | `varchar(36)` | Identificador del token. |
+| `userId` | `user_id` | `uuid` | Referencia obligatoria a `auth_user.user_id`. |
+| `jti` | `jti` | `varchar(36)` | Identificador del token, no el JWT completo. |
 | `expiresAt` | `expires_at` | `timestamp` | Fecha de expiración. |
 
-Las migraciones establecen `ON DELETE CASCADE` desde el usuario hacia ambas tablas. Las entidades solo declaran `userId`, sin una relación de objeto a `UserEntity`. Se almacena el JTI, no el JWT completo. No hay clave foránea entre una sesión y un token de actualización.
+Las migraciones crean ambas referencias al usuario con `ON DELETE CASCADE`. Las entidades solo declaran `userId`, sin relación de objeto con `UserEntity`. No hay una clave foránea que vincule sesiones con tokens de renovación.
 
-Las migraciones no agregan restricciones únicas a `user_name`, `email`, `code` ni `jti`, ni índices secundarios explícitos. Las fechas y los estados no tienen valores predeterminados en estas definiciones; `createdAt` y `updatedAt` son columnas normales, no decoradores de fecha automática.
+Las migraciones no crean restricciones únicas para `user_name`, `email`, `code` ni `jti`, ni índices secundarios explícitos. Las fechas y los estados no tienen valores predeterminados en el esquema. `createdAt` y `updatedAt` son columnas normales, no decoradores de fecha automática.
 
 ## Repositorios
 
-Todos los repositorios concretos son inyectables y heredan de [`TypeOrmRepository`](../src/modules/database/repositories/typeorm.repository.ts). Esta clase conserva el `DataSource` de la conexión configurada y lo expone mediante `getDataSource(): DataSource`.
+Los cinco proveedores concretos son `@Injectable()` y heredan de [`TypeOrmRepository`](../src/modules/database/repositories/typeorm.repository.ts). Esta clase conserva el `DataSource` inyectado y lo expone mediante `getDataSource(): DataSource`. Cada proveedor obtiene su repositorio de entidad desde `dataSource.manager.getRepository(...)`.
 
-Cada repositorio obtiene su `Repository<T>` desde `dataSource.manager`. Los métodos reciben `logId: string` para correlacionar mensajes. Las lecturas individuales convierten el resultado `null` de TypeORM en `undefined`.
+Todos los métodos de persistencia reciben `logId: string` como último argumento. Las lecturas individuales convierten el resultado `null` de TypeORM en `undefined`.
 
 ### `UserTypeOrmRepository`
 
@@ -145,28 +160,30 @@ Fuente: [`user.typeorm.repository.ts`](../src/modules/database/repositories/user
 
 | Método | Retorno asíncrono | Comportamiento |
 | --- | --- | --- |
-| `create(user, logId)` | `string` | Valida el perfil activo, transforma `user.password` con `Utils.createHash`, guarda y devuelve `user.userId`. |
-| `readActiveByUserId(userId, logId)` | `UserEntity \| undefined` | Busca un usuario activo y carga `profile.profileOptions`. |
-| `readByUserId(userId, logId)` | `UserEntity \| undefined` | Busca por ID sin filtrar estado y carga `profile.profileOptions`. |
-| `readByUsernameAndPassword(userName, password, logId)` | `UserEntity \| undefined` | Calcula el hash de la contraseña y busca por ambos campos, con `profile.profileOptions`. No filtra `isActive`. |
-| `update(user, changePassword, logId)` | `void` | Comprueba usuario y perfil activo, y asigna `updatedAt = new Date()`. |
+| `create(user, logId)` | `string` | Comprueba perfil activo, calcula el hash de `user.password`, guarda y devuelve `user.userId`. |
+| `readActiveByUserId(userId, logId)` | `UserEntity \| undefined` | Busca por ID con `isActive: true`. |
+| `readByUserId(userId, logId)` | `UserEntity \| undefined` | Busca por ID sin filtrar estado. |
+| `readByUsernameAndPassword(userName, password, logId)` | `UserEntity \| undefined` | Calcula el hash de la contraseña y busca por nombre y hash; no filtra estado. |
+| `update(user, changePassword, logId)` | `void` | Comprueba usuario y perfil activo, asigna `updatedAt` y actualiza. |
 | `delete(userId, logId)` | `void` | Comprueba existencia y elimina físicamente el usuario. |
 | `search(logId)` | `UserEntity[]` | Devuelve todos los usuarios sin cargar relaciones explícitamente. |
 
-En `update`, si `changePassword` es `true`, se calcula el hash y se guarda la entidad con `save`. Si es `false`, se actualizan exclusivamente `firstName`, `middleName`, `lastName`, `email`, `phone`, `isActive`, `updatedAt` y `profileId`; esa rama no modifica `userName` ni `password`.
+Las tres lecturas individuales cargan `profile.profileOptions`. No filtran el estado del perfil ni el de sus opciones. `search` no incorpora paginación, filtros ni orden explícito.
 
-[`Utils.createHash`](../src/modules/shared/utils/utils.ts) utiliza SHA-256 sin sal y devuelve una cadena hexadecimal de 64 caracteres. La contraseña puede utilizarse como condición de búsqueda aunque `select: false` impida devolverla en las lecturas ordinarias.
+En `update`, si `changePassword` es `true`, se transforma la contraseña y se utiliza `save(user)`. Si es `false`, se actualizan exclusivamente `firstName`, `middleName`, `lastName`, `email`, `phone`, `isActive`, `updatedAt` y `profileId`; esa rama no modifica `userName` ni `password`.
 
-`search` no implementa filtros, paginación ni orden explícito. Los errores de validación de `create`, `update` y `delete` usan `RepositoryError` con mensajes `Profile not found.` o `User not found.`, según corresponda.
+[`Utils.createHash`](../src/modules/shared/utils/utils.ts) aplica SHA-256 sin sal y devuelve 64 caracteres hexadecimales. `create` y la actualización con cambio de contraseña modifican la propiedad `password` del objeto recibido. El repositorio no asigna `createdAt` al crear; el llamador debe proporcionarlo.
 
-### `ProfileTypeOrmRepository` y `OptionTypeOrmRepository`
+La exclusión `select: false` evita devolver la contraseña en las lecturas ordinarias, pero permite usarla como condición de búsqueda. `delete` no desactiva al usuario: lo elimina y, con las claves foráneas de las migraciones, también se eliminan sus sesiones y tokens de renovación.
+
+### Perfiles y opciones
 
 | Repositorio | Método | Retorno asíncrono | Comportamiento |
 | --- | --- | --- | --- |
 | [`ProfileTypeOrmRepository`](../src/modules/database/repositories/profile.typeorm.repository.ts) | `exists(profileId, isActive, logId)` | `boolean` | Comprueba conjuntamente el ID y el estado solicitado. |
-| [`OptionTypeOrmRepository`](../src/modules/database/repositories/option.typeorm.repository.ts) | `search(logId)` | `OptionEntity[]` | Devuelve todas las opciones, incluidas las inactivas. |
+| [`OptionTypeOrmRepository`](../src/modules/database/repositories/option.typeorm.repository.ts) | `search(logId)` | `OptionEntity[]` | Lista todas las opciones, incluidas las inactivas. |
 
-Estos repositorios no ofrecen operaciones de escritura. La conversión de opciones a códigos de permisos se realiza fuera del módulo, en [`AuthRepository`](../src/modules/auth/infrastructure/repositories/auth.repository.ts), que cruza las asignaciones del perfil con las opciones activas.
+Estos repositorios no ofrecen operaciones de escritura. La interpretación de las opciones como permisos corresponde a sus consumidores.
 
 ### `SessionTypeOrmRepository`
 
@@ -178,7 +195,7 @@ Fuente: [`session.typeorm.repository.ts`](../src/modules/database/repositories/s
 | `readBySessionId(sessionId, logId)` | `SessionEntity \| undefined` | Busca por clave primaria. |
 | `readByJTI(jti, logId)` | `SessionEntity \| undefined` | Busca una sesión por JTI. |
 | `delete(sessionId, logId)` | `DeleteResult` | Elimina por clave primaria. |
-| `deleteByJTI(jti, manager, logId)` | `DeleteResult` | Elimina los registros que coincidan con el JTI. |
+| `deleteByJTI(jti, manager, logId)` | `DeleteResult` | Elimina todos los registros que coincidan con el JTI. |
 
 ### `RefreshTokenTypeOrmRepository`
 
@@ -186,17 +203,20 @@ Fuente: [`refreshToken.typeorm.repository.ts`](../src/modules/database/repositor
 
 | Método | Retorno asíncrono | Comportamiento |
 | --- | --- | --- |
-| `readByJTI(jti, logId)` | `RefreshTokenEntity \| undefined` | Busca un token de actualización por JTI. |
+| `readByJTI(jti, logId)` | `RefreshTokenEntity \| undefined` | Busca un registro por JTI. |
 | `create(refreshToken, manager, logId)` | `string` | Guarda y devuelve `refreshTokenId`. |
-| `deleteByJTI(jti, manager, logId)` | `DeleteResult` | Elimina los registros que coincidan con el JTI. |
+| `deleteByJTI(jti, manager, logId)` | `DeleteResult` | Elimina todos los registros que coincidan con el JTI. |
 
-Las lecturas de sesiones y tokens no comparan `expiresAt` con la fecha actual. Este módulo tampoco incluye una tarea de limpieza de registros expirados. Los métodos de eliminación de estos dos repositorios no comprueban previamente la existencia; el llamador puede inspeccionar `DeleteResult.affected`.
+Los repositorios de sesiones y tokens no verifican `expiresAt` al leer ni incluyen limpieza automática de registros vencidos. Sus métodos de borrado no comprueban previamente la existencia; el llamador puede consultar `DeleteResult.affected`.
 
 ## Transacciones y errores
 
-Los métodos `create` y `deleteByJTI` de sesiones y tokens aceptan `manager: EntityManager | undefined`. El argumento debe proporcionarse, aunque sea `undefined`: cuando contiene un administrador transaccional, el método usa `manager.getRepository(...)`; en otro caso utiliza su repositorio habitual.
+Los métodos `create` y `deleteByJTI` de sesiones y tokens reciben `manager: EntityManager | undefined`. Se debe pasar ese argumento, aunque sea `undefined`:
 
-Ejemplo dentro de un servicio que tiene inyectados ambos repositorios:
+- Con un administrador, usan `manager.getRepository(...)` para participar en su transacción.
+- Con `undefined`, usan el repositorio habitual del proveedor.
+
+Ejemplo dentro de un servicio con ambos repositorios inyectados:
 
 ```typescript
 await this.sessionRepository.getDataSource().transaction(async (manager) => {
@@ -205,25 +225,29 @@ await this.sessionRepository.getDataSource().transaction(async (manager) => {
 });
 ```
 
-El llamador debe esperar o devolver la promesa de `transaction` para conocer su finalización y recibir sus errores. El resto de los métodos no recibe un administrador transaccional externo.
+El llamador debe esperar o devolver la promesa de `transaction` para conocer su finalización y recibir errores. Los demás métodos no aceptan un administrador transaccional externo.
 
-Las operaciones capturan errores de persistencia y los envuelven en [`RepositoryError`](../src/modules/shared/errors/repository.error.ts), que conserva el error original en `innerError` y registra el mensaje. `SessionTypeOrmRepository.create` omite `logId` al construir ese error, aunque sí lo usa en sus mensajes iniciales. Algunos mensajes conservan nombres de otras operaciones: por ejemplo, `OptionTypeOrmRepository.search` registra `ProfileRepository.search`.
+Los errores se envuelven en [`RepositoryError`](../src/modules/shared/errors/repository.error.ts), que conserva el original en `innerError` y registra el mensaje con el identificador de seguimiento. Las validaciones de usuario y perfil utilizan `User not found.` y `Profile not found.`; los métodos de escritura de usuarios propagan los `RepositoryError` ya construidos.
 
-## Migraciones y datos iniciales
+Existen detalles de trazabilidad en la implementación actual: `SessionTypeOrmRepository.create` omite `logId` al construir su error, `OptionTypeOrmRepository.search` registra `ProfileRepository.search` y algunos mensajes de eliminación de tokens mencionan sesiones.
 
-Las migraciones se encuentran en [`migrations`](../src/modules/database/migrations) y definen los siguientes pasos en orden de timestamp:
+## Migraciones
+
+Los archivos de [`migrations`](../src/modules/database/migrations) implementan `MigrationInterface`, con `up` para aplicar y `down` para revertir. Se ordenan por el timestamp de sus clases:
 
 | Timestamp | Archivo | Acción de `up` |
 | --- | --- | --- |
 | `1763596800000` | `createOptionTable.migration.ts` | Crea `auth_option`. |
 | `1763596800001` | `createProfileTable.migration.ts` | Crea `auth_profile`. |
-| `1763596800002` | `createProfileOptionTable.migration.ts` | Crea la tabla intermedia, su clave compuesta y sus dos claves foráneas. |
+| `1763596800002` | `createProfileOptionTable.migration.ts` | Crea la tabla intermedia, su clave compuesta y dos claves foráneas. |
 | `1763596800003` | `createUserTable.migration.ts` | Crea `auth_user` y su referencia opcional al perfil. |
-| `1763596800004` | `createRefreshTokenTable.migration.ts` | Crea `auth_user_refresh_token` con borrado en cascada desde el usuario. |
-| `1763596800005` | `createSessionTable.migration.ts` | Crea `auth_user_session` con borrado en cascada desde el usuario. |
-| `1763596800006` | `insertDataTable.migration.ts` | Inserta permisos, perfil administrador, asignaciones y usuario inicial. |
+| `1763596800004` | `createRefreshTokenTable.migration.ts` | Crea `auth_user_refresh_token`, con borrado en cascada desde el usuario. |
+| `1763596800005` | `createSessionTable.migration.ts` | Crea `auth_user_session`, con borrado en cascada desde el usuario. |
+| `1763596800006` | `insertDataTable.migration.ts` | Inserta opciones, perfil administrador, asignaciones y usuario inicial. |
 
-La carga inicial crea diez opciones activas:
+### Datos iniciales
+
+La última migración inserta las siguientes opciones activas:
 
 | ID | Código | ID | Código |
 | --- | --- | --- | --- |
@@ -233,30 +257,30 @@ La carga inicial crea diez opciones activas:
 | 4 | `USER_DELETE` | 9 | `PROFILE_DELETE` |
 | 5 | `USER_SEARCH` | 10 | `PROFILE_SEARCH` |
 
-También crea el perfil `admin`, interno y activo, con las diez opciones, y el usuario activo `admin`, con correo `admin@base.com` y contraseña inicial `password123` almacenada mediante `Utils.createHash`. Estos valores están fijados en la migración, no proceden de variables de entorno.
+Crea el perfil `admin`, interno y activo, y le asigna las diez opciones. También crea un usuario activo con `userName: admin`, correo `admin@base.com`, teléfono `55555555` y contraseña inicial `password123`, almacenada mediante `Utils.createHash`. Su perfil es el recién insertado. Estos valores están fijados en la migración y no se obtienen del entorno.
 
-### Ejecución
+### Ejecución al arrancar
 
-Para aplicar las migraciones pendientes al arrancar, configurar los datos de conexión y establecer:
+Con PostgreSQL disponible y las variables de conexión configuradas, las migraciones pendientes pueden ejecutarse al iniciar la aplicación estableciendo:
 
 ```dotenv
 POSTGRES_SYNCRONIZE=false
 POSTGRES_MIGRATIONSRUN=true
 ```
 
-Después, iniciar la aplicación con el script existente:
+El script de desarrollo disponible es:
 
 ```sh
 npm run start:dev
 ```
 
-Para ejecutar el código compilado, los scripts disponibles son `npm run build` y `npm run start:prod`. El proyecto no incluye scripts específicos para generar, ejecutar o revertir migraciones mediante la CLI, ni un archivo independiente de configuración `DataSource` para ella.
+Para código compilado, los scripts son `npm run build` y `npm run start:prod`. El proyecto no incluye scripts específicos de CLI para generar, ejecutar o revertir migraciones, ni un archivo independiente de `DataSource` para ese fin.
 
-### Diferencias y limitaciones del código actual
+### Diferencias y limitaciones actuales
 
-- Las migraciones definen `option_id` como `int`, mientras que `OptionEntity` y `ProfileOptionEntity` lo declaran como `numeric`.
-- Las claves foráneas desde sesiones y tokens hacia usuarios, y desde la tabla intermedia hacia opciones, están en las migraciones pero no en relaciones de entidad. Por estas diferencias, la sincronización de entidades y las migraciones no describen exactamente el mismo esquema.
+- `option_id` es `int` en las migraciones y `numeric` en las entidades `OptionEntity` y `ProfileOptionEntity`.
+- Las claves foráneas de sesiones y tokens hacia usuarios, y de asignaciones hacia opciones, existen en las migraciones pero no como relaciones de entidad. La sincronización y las migraciones no describen exactamente el mismo esquema.
 - El `down` de `1763596800005-createSessionTable.migration.ts` intenta eliminar `auth_session`, aunque `up` crea `auth_user_session`.
-- El `down` de la carga inicial usa `deleteAll` y no limita el borrado a los registros insertados por `up`. Además, elimina opciones antes que sus asignaciones y perfiles antes que usuarios, por lo que puede fallar por las claves foráneas existentes.
+- El `down` de la carga inicial ejecuta `deleteAll` sobre opciones, asignaciones, perfiles y usuarios, en ese orden. No se limita a los registros insertados por `up`, y puede fallar por eliminar opciones antes que sus asignaciones y perfiles antes que usuarios.
 
-Estas observaciones describen la implementación actual; deben tenerse en cuenta antes de usar la sincronización o revertir migraciones.
+Estas diferencias describen el código actual y deben considerarse al sincronizar el esquema o revertir migraciones.

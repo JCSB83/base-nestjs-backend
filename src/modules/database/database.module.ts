@@ -1,5 +1,5 @@
 import appConfig from 'src/app.config';
-import { Logger, Module, OnModuleInit } from '@nestjs/common';
+import { Global, Logger, Module, OnModuleInit } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserTypeOrmRepository } from './repositories/user.typeorm.repository';
 import { SessionEntity } from './entities/session.entity';
@@ -13,6 +13,7 @@ import { RefreshTokenTypeOrmRepository } from './repositories/refreshToken.typeo
 import { ProfileTypeOrmRepository } from './repositories/profile.typeorm.repository';
 import { OptionTypeOrmRepository } from './repositories/option.typeorm.repository';
 
+@Global()
 @Module({
   imports: [
     TypeOrmModule.forRoot({

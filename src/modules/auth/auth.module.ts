@@ -1,5 +1,4 @@
 import { Logger, Module, OnModuleInit } from '@nestjs/common';
-import { DatabaseModule } from '../database/database.module';
 import { PassportModule } from '@nestjs/passport';
 import { JwtModule } from '@nestjs/jwt';
 import appConfig from 'src/app.config';
@@ -14,7 +13,6 @@ import { LogoutUseCase } from './application/logout.usecase';
 
 @Module({
   imports: [
-    DatabaseModule,
     PassportModule,
     JwtModule.register({
       secret: appConfig.jwtSecret,

@@ -8,9 +8,9 @@ import { SharedModule } from './modules/shared/shared.module';
 
 @Module({
   imports: [
+    DatabaseModule,
     SharedModule,
     HealthModule,
-    DatabaseModule,
     AuthModule,
     UsersModule,
     ProfileModule

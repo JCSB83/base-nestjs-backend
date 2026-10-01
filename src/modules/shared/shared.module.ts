@@ -1,10 +1,11 @@
-import { Module } from "@nestjs/common";
+import { Global, Module } from "@nestjs/common";
 import { Log4jsLoggerService } from "./services/log4jsLogger.service";
 import { LokiLoggerService } from "./services/lokiLogger.service";
 import { LogInterceptor } from "./interceptors/log.interceptor";
 
+@Global()
 @Module({
-   providers: [
+  providers: [
     Log4jsLoggerService,
     LokiLoggerService,
     LogInterceptor
