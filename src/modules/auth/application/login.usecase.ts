@@ -10,6 +10,7 @@ import { IRefreshToken } from '../domain/models/refreshToken.interface';
 import { AccessDto } from '../infrastructure/dto/access.dto';
 import { LoginDto } from '../infrastructure/dto/login.dto';
 import { Utils } from 'src/modules/shared/utils/utils';
+import { ErrorLevel } from 'src/modules/shared/errors/errorLevel.enum';
 
 @Injectable()
 export class LoginUseCase {
@@ -23,10 +24,11 @@ export class LoginUseCase {
         try {
             const user = await this.authRepository.getUserByUsernameAndPassword(loginDto.userName, loginDto.password, logId);
             if(!user) {
-                throw new UseCaseError('User not found', undefined, logId);
+                throw new UseCaseError('User not found', ErrorLevel.Validation, undefined, logId);
             }
-            Logger.log(`[${logId}] User "${user.userName}" found`);
-
+            if (!user.isActive) {
+                throw new UseCaseError('User is not active', ErrorLevel.Validation, undefined, logId);
+            }
             const jti = Utils.generateJti();
             const payload = { username: user.userName, sub: user.userId, jti };
             const strAccessToken = this.jwtService.sign(payload, {
@@ -38,7 +40,6 @@ export class LoginUseCase {
                 expiresIn: appConfig.jwtRefreshExpiresIn,
                 secret: appConfig.jwtRefreshSecret
             });
-
             const decodedAccessToken = this.jwtService.decode(strAccessToken);
             const session: ISession = {
                 sessionId: undefined,
@@ -46,7 +47,6 @@ export class LoginUseCase {
                 jti: payload.jti,
                 expiresAt: new Date(decodedAccessToken.exp * 1000)
             };
-            
             const decodedRefreshToken = this.jwtService.decode(strRefreshToken);
             const refreshToken: IRefreshToken = {
                 userId: user.userId,
@@ -54,21 +54,16 @@ export class LoginUseCase {
                 expiresAt: new Date(decodedRefreshToken.exp * 1000)
             }
             await this.authRepository.saveSessionAndRefreshToken(undefined, session, refreshToken, logId);
-
             const accessDto = new AccessDto();
             accessDto.accessToken = strAccessToken;
             accessDto.refreshToken = strRefreshToken;
-            
             Logger.log(`[${logId}] Login successfully for userId "${user.userId}"`);
-            return accessDto;      
+            return accessDto;
         } catch (error: any) {
             if(error instanceof UseCaseError) {
                 throw error;
             }
-            if(error instanceof RepositoryError) {
-                throw error;
-            }
-            throw new UseCaseError('', error, logId);            
+            throw new UseCaseError('Internal server error', ErrorLevel.Unknown, error, logId);
         }
     }
 }

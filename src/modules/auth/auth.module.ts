@@ -5,11 +5,14 @@ import appConfig from 'src/app.config';
 import { LoginUseCase } from './application/login.usecase';
 import { ValidateTokenUseCase } from './application/validateToken.usecase';
 import { RefreshTokenUseCase } from './application/refreshToken.usecase';
-import { AuthController } from './infrastructure/controllers/auth.controller';
+import { InfoController } from './infrastructure/controllers/info.controller';
 import { JwtStrategy } from './infrastructure/strategies/jwt.strategy';
 import { JwtAuthGuard } from './infrastructure/guards/jwt.authguard';
 import { AUTH_REPOSITORY, AuthRepository } from './infrastructure/repositories/auth.repository';
 import { LogoutUseCase } from './application/logout.usecase';
+import { RefreshController } from './infrastructure/controllers/refresh.controller';
+import { LogoutController } from './infrastructure/controllers/logout.controller';
+import { LoginController } from './infrastructure/controllers/login.controller';
 
 @Module({
   imports: [
@@ -28,7 +31,12 @@ import { LogoutUseCase } from './application/logout.usecase';
     JwtStrategy,
     JwtAuthGuard
   ],
-  controllers: [AuthController],
+  controllers: [
+    LoginController, 
+    LogoutController, 
+    RefreshController, 
+    InfoController
+  ],
   exports: [
     JwtAuthGuard,
     ValidateTokenUseCase

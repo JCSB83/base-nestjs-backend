@@ -35,14 +35,13 @@ export class UserTypeOrmRepository extends TypeOrmRepository {
             throw new RepositoryError('An error occurred while trying to create the user.', error, logId);
         }
     }
-    
-    async readActiveByUserId(userId: string, logId: string): Promise<UserEntity | undefined> {
-        Logger.log(`[${logId}] UserRepository.readActiveByUserId`);
+
+    async readByUserId(userId: string, logId: string): Promise<UserEntity | undefined> {
+        Logger.log(`[${logId}] UserRepository.readByUserId`);
         try {
             const user = await this.userRepository.findOne({ 
                 where: { 
-                    userId: userId,
-                    isActive: true,
+                    userId: userId 
                 }, 
                 relations: {
                     profile: {
@@ -55,16 +54,17 @@ export class UserTypeOrmRepository extends TypeOrmRepository {
             }
             return user;
         } catch (error: any) {
-            throw new RepositoryError('An error occurred while trying to get the active user.', error, logId);
+            throw new RepositoryError('An error occurred while trying to get the user.', error, logId);
         }
     }
 
-    async readByUserId(userId: string, logId: string): Promise<UserEntity | undefined> {
-        Logger.log(`[${logId}] UserRepository.readByUserId`);
+    async readActiveByUserId(userId: string, logId: string): Promise<UserEntity | undefined> {
+        Logger.log(`[${logId}] UserRepository.readActiveByUserId`);
         try {
             const user = await this.userRepository.findOne({ 
                 where: { 
-                    userId: userId 
+                    userId: userId,
+                    isActive: true
                 }, 
                 relations: {
                     profile: {

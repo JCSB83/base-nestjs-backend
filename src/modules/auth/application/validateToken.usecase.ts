@@ -6,6 +6,7 @@ import { AUTH_REPOSITORY } from '../infrastructure/repositories/auth.repository'
 import type { IAuthRepository } from '../domain/repositories/auth.repository.interface';
 import { IUser } from '../domain/models/user.interface';
 import { ISession } from '../domain/models/session.interface';
+import { ErrorLevel } from 'src/modules/shared/errors/errorLevel.enum';
 
 @Injectable()
 export class ValidateTokenUseCase {
@@ -22,7 +23,7 @@ export class ValidateTokenUseCase {
             decoded = this.jwtService.verify(token, { secret: appConfig.jwtSecret });
             jti = decoded.jti;
         } catch (error: any) {
-            throw new UseCaseError('', error, logId);
+            throw new UseCaseError('Internal server error', ErrorLevel.Validation, error, logId);
         }
         try {
             const session = await this.authRepository.getSessionByJTI(jti, logId);
@@ -31,7 +32,7 @@ export class ValidateTokenUseCase {
                 return { user, session };
             }
         } catch (error: any) {
-            throw new UseCaseError('', error, logId);
+            throw new UseCaseError('Internal server error', ErrorLevel.Unknown, error, logId);
         }
     }  
 }

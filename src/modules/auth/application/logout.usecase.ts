@@ -3,6 +3,7 @@ import { AUTH_REPOSITORY } from "../infrastructure/repositories/auth.repository"
 import type { IAuthRepository } from "../domain/repositories/auth.repository.interface";
 import { UseCaseError } from "src/modules/shared/errors/usecase.error";
 import { RepositoryError } from "src/modules/shared/errors/repository.error";
+import { ErrorLevel } from "src/modules/shared/errors/errorLevel.enum";
 
 @Injectable()
 export class LogoutUseCase {
@@ -14,17 +15,14 @@ export class LogoutUseCase {
         try {
             const session = await this.authRepository.getSessionById(sessionId, logId);
             if (!session) {
-                throw new UseCaseError('', undefined, logId);
+                throw new UseCaseError('Session not found', ErrorLevel.Validation, undefined, logId);
             }
             await this.authRepository.deleteSessionAndRefreshToken(session.jti, logId);
         } catch (error: any) {
             if(error instanceof UseCaseError) {
                 throw error;
             }
-            if(error instanceof RepositoryError) {
-                throw error;
-            }
-            throw new UseCaseError('', error, logId);
+            throw new UseCaseError('Internal server error', ErrorLevel.Unknown, error, logId);
         }
     }
 }

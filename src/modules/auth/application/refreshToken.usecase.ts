@@ -9,6 +9,7 @@ import { AccessDto } from '../infrastructure/dto/access.dto';
 import { IRefreshToken } from '../domain/models/refreshToken.interface';
 import { Utils } from 'src/modules/shared/utils/utils';
 import { ISession } from '../domain/models/session.interface';
+import { ErrorLevel } from 'src/modules/shared/errors/errorLevel.enum';
 
 @Injectable()
 export class RefreshTokenUseCase {
@@ -23,48 +24,44 @@ export class RefreshTokenUseCase {
             this.jwtService.verify(refresh_token, {
                 secret: appConfig.jwtRefreshSecret
             });
-           
             Logger.log(`[${logId}] json web token verify successful`);
             const decodedRefresh_token = this.jwtService.decode(refresh_token);
             const refreshToken = await this.authRepository.getRefreshTokenByJTI(decodedRefresh_token.jti, logId);
             if (!refreshToken) {
-                throw new UseCaseError('', undefined, logId);
+                throw new UseCaseError('Refresh token not found', ErrorLevel.Validation, undefined, logId);
             }
             Logger.log(`[${logId}] RefreshToken found for userId "${refreshToken.userId}"`);
-            const user = await this.authRepository.getActiveUserByUserId(refreshToken.userId, logId);
+            const user = await this.authRepository.getUserByUserId(refreshToken.userId, logId);
             if (!user) {
-                throw new UseCaseError('', undefined, logId);
+                throw new UseCaseError('User not found', ErrorLevel.Validation, undefined, logId);
             }
-
+            if (!user.isActive) {
+                throw new UseCaseError('User is not active', ErrorLevel.Validation, undefined, logId);
+            }
             const jti = Utils.generateJti();
             const payload = { username: user.userName, sub: user.userId, jti };
             const strAccessToken = this.jwtService.sign(payload, {
                 expiresIn: appConfig.jwtExpiresIn,
                 secret: appConfig.jwtSecret,
             });
-
             const refreshPayload = { username: user.userName, sub: user.userId, jti };
             const strRefreshToken = this.jwtService.sign(refreshPayload, {
                 expiresIn: appConfig.jwtRefreshExpiresIn,
                 secret: appConfig.jwtRefreshSecret,
             });
-
             const decodedAccessToken = this.jwtService.decode(strAccessToken);
             const session : ISession = {
                 userId: user.userId,
                 jti: payload.jti,
                 expiresAt: new Date(decodedAccessToken.exp * 1000)
             }
-            
             const decodedRefreshToken = this.jwtService.decode(strRefreshToken);
             const newRefreshToken: IRefreshToken = {
                 userId: user.userId,
                 jti: refreshPayload.jti,
                 expiresAt: new Date(decodedRefreshToken.exp * 1000)
             };
-
             await this.authRepository.saveSessionAndRefreshToken(decodedRefresh_token.jti, session, newRefreshToken, logId);
-
             const accessDto = new AccessDto();
             accessDto.accessToken = strAccessToken;
             accessDto.refreshToken = strRefreshToken;
@@ -74,10 +71,7 @@ export class RefreshTokenUseCase {
             if(error instanceof UseCaseError) {
                 throw error;
             }             
-            if (error instanceof RepositoryError) {
-                throw new UseCaseError('', error, logId);
-            }
-            throw new UseCaseError('', error, logId);
+            throw new UseCaseError('Internal server error', ErrorLevel.Unknown, error, logId);
         }
     }
 }

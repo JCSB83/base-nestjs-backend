@@ -47,7 +47,7 @@ export class AuthRepository implements IAuthRepository {
         if (!userEntity) {
             return undefined;
         }
-        const options = await this.optionRepository.searchActive(logId);
+        const options = await this.optionRepository.search(logId);
         return this.mapToIUser(userEntity, options);
     }
 
