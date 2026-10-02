@@ -13,4 +13,6 @@ export interface IAuthRepository {
     deleteSessionAndRefreshToken(jti: string, logId: string): Promise<void>;
     saveRefreshToken(refreshToken: IRefreshToken, logId: string): Promise<string>;
     saveSessionAndRefreshToken(previus_jti: string | undefined, session: ISession, refreshToken: IRefreshToken, logId: string): Promise<void>;
+    deleteExpiredSessions(logId: string): Promise<void>;
+    deleteExpiredRefreshTokens(logId: string): Promise<void>;
 }

@@ -8,6 +8,6 @@ export class RefreshTokenEntity {
   userId!: string;
   @Column({ name: 'jti', nullable: false, length: 36 })
   jti!: string;
-  @Column({ name: 'expires_at', nullable: false })
+  @Column({ name: 'expires_at', type: 'timestamptz',nullable: false })
   expiresAt!: Date;
 }

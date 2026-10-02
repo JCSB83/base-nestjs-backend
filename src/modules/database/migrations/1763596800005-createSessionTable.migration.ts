@@ -32,7 +32,7 @@ export class CreateSessionTableMigration1763596800005 implements MigrationInterf
                     },
                     {
                         name: 'expires_at',
-                        type: 'timestamp',
+                        type: 'timestamptz',
                         isNullable: false,
                     },
                 ],

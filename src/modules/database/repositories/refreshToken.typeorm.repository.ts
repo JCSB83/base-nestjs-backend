@@ -49,4 +49,17 @@ export class RefreshTokenTypeOrmRepository extends TypeOrmRepository {
             throw new RepositoryError('An error occurred while trying to delete the session.', error, logId);
         }
     }
+
+    async deleteExpiredRefreshTokens(logId?: string): Promise<void> {
+        try {
+            Logger.log(`[${logId}] RefreshTokenRepository.deleteExpiredTokens`);
+            await this.refreshTokenRepository.createQueryBuilder()
+                .delete()
+                .from(RefreshTokenEntity)
+                .where("expires_at <= now()")
+                .execute();
+        } catch (error: any) {
+            throw new RepositoryError('An error occurred while trying to delete expired refresh tokens.', error, logId);
+        }
+    }
 }

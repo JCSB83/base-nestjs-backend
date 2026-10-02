@@ -32,7 +32,7 @@ export class CreateRefreshTokenTableMigration1763596800004 implements MigrationI
                     },
                     {
                         name: 'expires_at',
-                        type: 'timestamp',
+                        type: 'timestamptz',
                         isNullable: false,
                     },
                 ],

@@ -157,4 +157,12 @@ export class AuthRepository implements IAuthRepository {
             await this.refreshTokenRepository.create(refreshTokenEntity, manager, logId);
         });
     }
+
+    async deleteExpiredSessions(logId: string): Promise<void> {
+        await this.sessionRepository.deleteExpiredSessions(logId);
+    }
+
+    async deleteExpiredRefreshTokens(logId: string): Promise<void> {
+        await this.refreshTokenRepository.deleteExpiredRefreshTokens(logId);
+    }
 }

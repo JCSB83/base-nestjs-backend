@@ -1,25 +1,26 @@
 # Módulo de autenticación
 
-El módulo [`src/modules/auth`](../src/modules/auth) implementa inicio de sesión, renovación de tokens, consulta del usuario autenticado y cierre de sesión. Combina JWT con sesiones persistidas: las rutas protegidas requieren un token válido, una sesión existente y un usuario activo.
+El módulo [`src/modules/auth`](../src/modules/auth) implementa inicio de sesión, renovación de tokens, consulta del usuario autenticado, cierre de sesión y limpieza automática de registros vencidos. Combina JWT con sesiones persistidas: las rutas protegidas requieren un token válido, una sesión existente y un usuario activo.
 
 ## Arquitectura
 
 | Componente | Responsabilidad |
 | --- | --- |
-| [`AuthModule`](../src/modules/auth/auth.module.ts) | Registra controladores, casos de uso, repositorio, Passport y JWT. |
+| [`AuthModule`](../src/modules/auth/auth.module.ts) | Registra controladores, casos de uso, repositorio, Passport, JWT y tareas programadas. |
 | [`LoginController`](../src/modules/auth/infrastructure/controllers/login.controller.ts) | Expone el inicio de sesión. |
 | [`RefreshController`](../src/modules/auth/infrastructure/controllers/refresh.controller.ts) | Expone la renovación del par de tokens. |
 | [`InfoController`](../src/modules/auth/infrastructure/controllers/info.controller.ts) | Devuelve el usuario autenticado. |
 | [`LogoutController`](../src/modules/auth/infrastructure/controllers/logout.controller.ts) | Expone el cierre de la sesión actual. |
-| `application` | Contiene `LoginUseCase`, `RefreshTokenUseCase`, `ValidateTokenUseCase` y `LogoutUseCase`. |
+| `application` | Contiene los casos de uso de login, renovación, validación, logout y eliminación de sesiones y refresh tokens vencidos. |
 | `domain/models` | Define `IUser`, `ISession` e `IRefreshToken`. |
 | `domain/repositories` | Define el contrato `IAuthRepository`. |
 | `infrastructure/dto` | Define las entradas de login y renovación, y la salida con ambos tokens. |
 | `infrastructure/guards` | Implementa autenticación y comprobación de permisos. |
 | `infrastructure/strategies` | Registra la estrategia JWT de Passport. |
 | [`AuthRepository`](../src/modules/auth/infrastructure/repositories/auth.repository.ts) | Adapta los repositorios TypeORM al dominio y coordina las transacciones. |
+| [`TaskService`](../src/modules/auth/infrastructure/services/task.service.ts) | Ejecuta cada minuto las dos tareas de limpieza de registros vencidos. |
 
-`AuthModule` importa `PassportModule` y `JwtModule`, y registra `AUTH_REPOSITORY`, un `Symbol`, con la implementación `AuthRepository`. Exporta `JwtAuthGuard` y `ValidateTokenUseCase` para otros módulos.
+`AuthModule` importa `ScheduleModule.forRoot()`, `PassportModule` y `JwtModule`, y registra `AUTH_REPOSITORY`, un `Symbol`, con la implementación `AuthRepository`. También registra `TaskService`, `DeleteExpiredSessionsUseCase` y `DeleteExpiredRefreshTokensUseCase`. Exporta `JwtAuthGuard` y `ValidateTokenUseCase` para otros módulos. La programación de tareas utiliza la dependencia `@nestjs/schedule`.
 
 `AuthRepository` consume `UserTypeOrmRepository`, `SessionTypeOrmRepository`, `RefreshTokenTypeOrmRepository` y `OptionTypeOrmRepository`. Estos proveedores se exportan desde `DatabaseModule`, que es global y se importa en `AppModule`. La conexión, las entidades y las migraciones se describen en [Base de datos](database.md).
 
@@ -103,7 +104,7 @@ Content-Type: application/json
 
 La entrada se llama `token`, aunque el campo de salida se llama `refreshToken`. La respuesta tiene `statusCode: 200`, `message: "refresh token successful"` y el mismo formato de `data` del login.
 
-`RefreshDto` declara `@IsString()` y `@IsNotEmpty()`, pero `RefreshController` no aplica `ValidationPipe` y `main.ts` tampoco registra uno global. Por tanto, esos decoradores no validan la solicitud en la configuración actual. Los errores de verificación del token se procesan en el caso de uso.
+`RefreshDto` exige que `token` sea una cadena no vacía mediante `@IsString()` y `@IsNotEmpty()`. `RefreshController` aplica `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true })`: rechaza campos adicionales y valores que incumplan esas validaciones con `400`. Si la cadena supera la validación del DTO pero el JWT es inválido o está vencido, el error se procesa en el caso de uso.
 
 El cliente debe reemplazar **ambos tokens** por los recibidos. La renovación elimina los registros del JTI anterior e inserta un nuevo par.
 
@@ -231,7 +232,7 @@ El guard propio no hereda de `AuthGuard('jwt')` ni utiliza esta estrategia. La e
 | `ISession` | `sessionId?`, `userId`, `jti`, `expiresAt`. |
 | `IRefreshToken` | `userId`, `jti`, `expiresAt`. |
 
-Se persiste el JTI, no el JWT completo, en `auth_user_session` y `auth_user_refresh_token`. Ambos registros conservan `userId` y `expiresAt`.
+Se persiste el JTI, no el JWT completo, en `auth_user_session` y `auth_user_refresh_token`. Ambos registros conservan `userId` y `expiresAt`. Las entidades y sus migraciones de creación definen `expires_at` como `timestamptz`; en el dominio se representa como `Date` y se obtiene del `exp` del JWT. La limpieza compara ese instante con `now()` de PostgreSQL.
 
 El contrato [`IAuthRepository`](../src/modules/auth/domain/repositories/auth.repository.interface.ts) incluye los siguientes métodos. Todos reciben `logId` como último argumento y devuelven promesas:
 
@@ -247,8 +248,35 @@ El contrato [`IAuthRepository`](../src/modules/auth/domain/repositories/auth.rep
 | `saveRefreshToken(refreshToken, logId)` | `string` | Guardar registro de renovación y devolver su ID. |
 | `saveSessionAndRefreshToken(previousJti, session, refreshToken, logId)` | `void` | Guardar el par; si recibe JTI previo, eliminar el anterior. |
 | `deleteSessionAndRefreshToken(jti, logId)` | `void` | Eliminar ambos registros por JTI. |
+| `deleteExpiredSessions(logId)` | `void` | Delegar el borrado de sesiones vencidas a `SessionTypeOrmRepository`. |
+| `deleteExpiredRefreshTokens(logId)` | `void` | Delegar el borrado de refresh tokens vencidos a `RefreshTokenTypeOrmRepository`. |
 
 Los métodos que operan sobre el par usan y esperan `DataSource.transaction`, pasando el mismo `EntityManager` a ambas operaciones. En la renovación, borrados e inserciones pertenecen a una sola transacción. Los métodos de guardado individual no coordinan una transacción compartida y no se usan para emitir los pares en los casos de uso actuales.
+
+## Limpieza automática de registros vencidos
+
+[`TaskService`](../src/modules/auth/infrastructure/services/task.service.ts) declara dos métodos independientes con `@Cron(CronExpression.EVERY_MINUTE)`. Se registran mediante `ScheduleModule.forRoot()` al iniciar la aplicación; no necesitan una solicitud HTTP.
+
+| Método programado | Caso de uso | Operación final |
+| --- | --- | --- |
+| `deleteExpiredSessions()` | [`DeleteExpiredSessionsUseCase`](../src/modules/auth/application/deletedExpiredSessions.usecase.ts) | Borra de `auth_user_session` los registros con `expires_at <= now()`. |
+| `deletedExpiredRefreshTokens()` | [`DeleteExpiredRefreshTokensUseCase`](../src/modules/auth/application/deleteExpiredRefreshTokens.usecase.ts) | Borra de `auth_user_refresh_token` los registros con `expires_at <= now()`. |
+
+El nombre del archivo `deletedExpiredSessions.usecase.ts` y el método `deletedExpiredRefreshTokens()` conservan la escritura actual del código.
+
+Cada ejecución sigue este flujo:
+
+1. Genera un `logId` con `Utils.generateLogId()` y registra el inicio de la limpieza.
+2. Invoca `execute(logId): Promise<void>` del caso de uso correspondiente.
+3. El caso de uso delega en `IAuthRepository`, y `AuthRepository` llama al repositorio TypeORM correspondiente.
+4. El repositorio ejecuta un `DELETE` mediante QueryBuilder con la condición `expires_at <= now()`, utilizando la hora de PostgreSQL.
+5. Si ocurre un error, el repositorio lo envuelve en `RepositoryError`; el caso de uso lo propaga y `TaskService` lo captura y registra. No se produce una respuesta HTTP ni se reintenta dentro de esa ejecución.
+
+Las tareas eliminan físicamente registros y no devuelven el número de filas afectadas. Cada tarea opera sobre una sola tabla; no comparten una transacción ni eliminan automáticamente el registro de la otra tabla con el mismo JTI. Esto permite borrar una sesión de acceso vencida y conservar su refresh token mientras siga vigente. La renovación continúa funcionando porque consulta el registro de renovación y no exige que exista la sesión anterior.
+
+La limpieza no determina cuándo deja de aceptarse un token: `JwtService.verify` comprueba su expiración en cada uso, aunque el registro todavía no haya sido eliminado. La ejecución periódica reduce los registros vencidos que permanecen en la base de datos.
+
+La frecuencia está fijada en el código, sin una variable de entorno ni opciones explícitas de zona horaria o de exclusión de ejecuciones simultáneas. Las tareas corren en cada instancia de la aplicación que inicialice este módulo; no hay coordinación distribuida entre instancias. Si el proceso está detenido, la limpieza se reanuda en las ejecuciones programadas después de arrancar.
 
 ## Errores y trazabilidad
 
@@ -256,12 +284,12 @@ Los métodos que operan sobre el par usan y esperan `DataSource.transaction`, pa
 
 | Situación | HTTP | Respuesta actual |
 | --- | --- | --- |
-| Login con DTO inválido o campos adicionales | `400` | Error estándar de `ValidationPipe`, fuera del envoltorio del controlador. |
+| Login o refresh con DTO inválido o campos adicionales | `400` | Error estándar de `ValidationPipe`, fuera del envoltorio del controlador. |
 | Credenciales incorrectas | `400` | `message: "login failed"`, `error: "User not found"`. |
 | Usuario inactivo en login o refresh | `400` | `error: "User is not active"`. |
 | Refresh token válido sin registro persistido | `400` | `message: "refresh token failed"`, `error: "Refresh token not found"`. |
 | Usuario inexistente durante refresh | `400` | `error: "User not found"`. |
-| Refresh token inválido o vencido | `500` | Se envuelve como error `Unknown`, con `error: "Internal server error"`. |
+| Refresh token no vacío y de tipo cadena, pero inválido o vencido | `500` | Supera el DTO, pero falla la verificación JWT; se envuelve como error `Unknown`, con `error: "Internal server error"`. |
 | Sesión ausente dentro de `LogoutUseCase` | `400` | `message: "logout failed"`, `error: "Session not found"`. Normalmente el guard detecta antes la ausencia de sesión. |
 | Fallo de persistencia en login, refresh o logout | `500` | `error: "Internal server error"`. |
 | Fallo del guard de autenticación | `401` | `UnauthorizedException`. |
@@ -275,7 +303,7 @@ En respuestas exitosas, los cuatro controladores establecen `req.logData = false
 
 ## Límites de la implementación actual
 
-- La expiración se verifica en el JWT. Las consultas de sesiones y refresh tokens no filtran por `expiresAt`, y el módulo no incluye limpieza automática de registros vencidos.
+- La expiración se verifica en el JWT. Las lecturas de sesiones y refresh tokens no filtran por `expiresAt`; las tareas programadas eliminan los registros vencidos cada minuto según la hora de PostgreSQL.
 - La validación de acceso busca la sesión por JTI y al usuario por `sub`, sin comparar explícitamente `session.userId` con ese `sub`.
 - La lectura del refresh token ocurre antes de la transacción de reemplazo. No existe bloqueo ni comprobación de filas eliminadas que garantice una sola renovación ante solicitudes concurrentes con el mismo token.
 - El logout requiere un access token válido. No hay un endpoint para revocar mediante refresh token ni para cerrar todas las sesiones.

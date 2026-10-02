@@ -22,9 +22,9 @@ export class UserEntity {
   phone!: string;
   @Column({ name: 'is_active', type: 'boolean', nullable: false })
   isActive!: boolean;
-  @Column({ name: 'created_at', type: 'timestamp', nullable: false })
+  @Column({ name: 'created_at', type: 'timestamptz', nullable: false })
   createdAt!: Date;
-  @Column({ name: 'updated_at', type: 'timestamp', nullable: true })
+  @Column({ name: 'updated_at', type: 'timestamptz', nullable: true })
   updatedAt?: Date;
   @Column({ name: 'profile_id', type: 'uuid', nullable: true })
   profileId!: string;

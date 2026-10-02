@@ -72,4 +72,17 @@ export class SessionTypeOrmRepository extends TypeOrmRepository {
             throw new RepositoryError('An error occurred while trying to delete the session.', error, logId);
         }
     }
+
+    async deleteExpiredSessions(logId?: string): Promise<void> {
+        try {
+            Logger.log(`[${logId}] SessionRepository.deleteExpiredSessions`);
+            await this.sessionRepository.createQueryBuilder()
+                .delete()
+                .from(SessionEntity)
+                .where("expires_at <= now()")
+                .execute();
+        } catch (error: any) {
+            throw new RepositoryError('An error occurred while trying to delete expired sessions.', error, logId);
+        }
+    }
 }

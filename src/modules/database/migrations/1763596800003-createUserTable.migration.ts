@@ -68,12 +68,12 @@ export class CreateUserTableMigration1763596800003 implements MigrationInterface
           },
           {
             name: 'created_at',
-            type: 'timestamp',
+            type: 'timestamptz',
             isNullable: false,
           },
           {
             name: 'updated_at',
-            type: 'timestamp',
+            type: 'timestamptz',
             isNullable: true,
           },
           {

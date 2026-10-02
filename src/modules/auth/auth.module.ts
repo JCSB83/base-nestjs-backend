@@ -13,9 +13,14 @@ import { LogoutUseCase } from './application/logout.usecase';
 import { RefreshController } from './infrastructure/controllers/refresh.controller';
 import { LogoutController } from './infrastructure/controllers/logout.controller';
 import { LoginController } from './infrastructure/controllers/login.controller';
+import { TaskService } from './infrastructure/services/task.service';
+import { DeleteExpiredSessionsUseCase } from './application/deletedExpiredSessions.usecase';
+import { DeleteExpiredRefreshTokensUseCase } from './application/deleteExpiredRefreshTokens.usecase';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     PassportModule,
     JwtModule.register({
       secret: appConfig.jwtSecret,
@@ -23,13 +28,16 @@ import { LoginController } from './infrastructure/controllers/login.controller';
     })
   ],
   providers: [
-    { provide: AUTH_REPOSITORY, useClass: AuthRepository },
+    DeleteExpiredSessionsUseCase,
+    DeleteExpiredRefreshTokensUseCase,
     LoginUseCase,
     LogoutUseCase,
-    ValidateTokenUseCase,
     RefreshTokenUseCase,
+    ValidateTokenUseCase,
+    { provide: AUTH_REPOSITORY, useClass: AuthRepository },    
     JwtStrategy,
-    JwtAuthGuard
+    JwtAuthGuard,
+    TaskService
   ],
   controllers: [
     LoginController, 

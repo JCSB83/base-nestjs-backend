@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Logger, Post, Req } from "@nestjs/common";
+import { Body, Controller, HttpCode, Logger, Post, Req, UsePipes, ValidationPipe } from "@nestjs/common";
 import { CommonController } from "src/modules/shared/controllers/common.controller";
 import { RefreshDto } from "../dto/refresh.dto";
 import { ResponseDto } from "src/modules/shared/utils/infrastructure/response.dto";
@@ -7,6 +7,7 @@ import { RefreshTokenUseCase } from "../../application/refreshToken.usecase";
 import type { Request } from 'express';
 
 @Controller(['api/auth'])
+@UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
 export class RefreshController extends CommonController {
     constructor(private readonly refreshTokenUseCase: RefreshTokenUseCase) {
         super();

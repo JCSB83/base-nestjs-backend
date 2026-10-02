@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, HttpException, Logger, Req, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Controller, Get, HttpException, Logger, Req, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
 import { ResponseDto } from 'src/modules/shared/utils/infrastructure/response.dto';
 import { AccessDto } from '../dto/access.dto';
 import type { Request } from 'express';

@@ -38,12 +38,12 @@ export class CreateProfileTableMigration1763596800001 implements MigrationInterf
           },
           {
             name: 'created_at',
-            type: 'timestamp',
+            type: 'timestamptz',
             isNullable: false,
           },
           {
             name: 'updated_at',
-            type: 'timestamp',
+            type: 'timestamptz',
             isNullable: true,
           },
         ],
