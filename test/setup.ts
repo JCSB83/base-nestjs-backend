@@ -1,4 +1,9 @@
 // Unit tests exercise our controllers and module wiring, not Terminus internals.
+// Swagger metadata is verified against the generated document outside these unit mocks.
+jest.mock('@nestjs/swagger', () => ({
+  ApiTags: () => () => undefined,
+  ApiOperation: () => () => undefined,
+}));
 // Its ESM health decorator loads Swagger via import.meta, outside this CJS test runtime.
 jest.mock('@nestjs/terminus', () => {
   const { Module } = jest.requireActual('@nestjs/common');

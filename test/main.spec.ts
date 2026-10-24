@@ -15,6 +15,8 @@ jest.mock('@nestjs/core', () => ({
   NestFactory: { create: jest.fn() },
 }));
 jest.mock('@nestjs/swagger', () => ({
+  ApiTags: () => () => undefined,
+  ApiOperation: () => () => undefined,
   DocumentBuilder: class {
     private info = { title: '', description: '', version: '' };
     setTitle(value: string) {
