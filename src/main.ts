@@ -1,11 +1,11 @@
 import { NestFactory } from '@nestjs/core';
+import { LoggerService } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { INestApplication, Logger, ValidationPipe } from '@nestjs/common';
 import { LogInterceptor } from './modules/shared/interceptors/log.interceptor';
-import { Log4jsLoggerService } from './modules/shared/services/log4jsLogger.service';
-import { LokiLoggerService } from './modules/shared/services/lokiLogger.service';
 import { AppConfig } from './app.config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { LOGGER_SERVICE } from './modules/shared/shared.module';
 
 function configureSwagger(app: INestApplication<any>, appConfig: AppConfig) {
     const documentBuilder = new DocumentBuilder()
@@ -17,10 +17,8 @@ function configureSwagger(app: INestApplication<any>, appConfig: AppConfig) {
     SwaggerModule.setup('swagger', app, document);
 }
 
-function configureLogger(app: INestApplication<any>, appConfig: AppConfig) {
-    const logger = appConfig.logMode === 'log4js'
-        ? app.get(Log4jsLoggerService)
-        : app.get(LokiLoggerService);
+function configureLogger(app: INestApplication<any>) {
+    const logger = app.get<LoggerService>(LOGGER_SERVICE);
     app.useLogger(logger);
 }
 
@@ -57,17 +55,22 @@ function configureShutdown(app: INestApplication<any>): void {
 }
 
 async function bootstrap() {
-    const app = await NestFactory.create(AppModule);
-    const appConfig = app.get(AppConfig);
+    try {
+        const app = await NestFactory.create(AppModule, { bufferLogs: true });
+        const appConfig = app.get(AppConfig);
 
-    configureSwagger(app, appConfig);
-    configureLogger(app, appConfig);
-    configureGlobalPipes(app);
-    configureInterceptors(app);
-    configureShutdown(app);
+        configureSwagger(app, appConfig);
+        configureLogger(app);
+        configureGlobalPipes(app);
+        configureInterceptors(app);
+        configureShutdown(app);
 
-    await app.listen(appConfig.port, () => {
-        Logger.log(`${appConfig.appName} running on port ${appConfig.port}`);
-    });
+        await app.listen(appConfig.port, () => {
+            Logger.log(`${appConfig.appName} running on port ${appConfig.port}`);
+        });
+    } catch (error) {
+        Logger.error('Error starting the application:', error);
+        process.exit(1);
+    }
 }
 bootstrap();

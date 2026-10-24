@@ -1,9 +1,12 @@
-import { Module } from "@nestjs/common";
+import { LoggerService, Module } from "@nestjs/common";
 import { TerminusModule } from "@nestjs/terminus";
 import { HealthController } from "./controllers/health.controller";
 import { Log4jsLoggerService } from "./services/log4jsLogger.service";
 import { LokiLoggerService } from "./services/lokiLogger.service";
 import { LogInterceptor } from "./interceptors/log.interceptor";
+import { AppConfig } from "src/app.config";
+
+export const LOGGER_SERVICE = Symbol('LOGGER_SERVICE');
 
 @Module({
     imports: [
@@ -13,13 +16,24 @@ import { LogInterceptor } from "./interceptors/log.interceptor";
         HealthController
     ],
     providers: [
-        Log4jsLoggerService,
-        LokiLoggerService,
+        {
+            provide: LOGGER_SERVICE,
+            inject: [AppConfig],
+            useFactory: (appConfig: AppConfig): LoggerService => {
+                switch (appConfig.logMode) {
+                    case 'loki':
+                        return new LokiLoggerService(appConfig);
+                    case 'log4js':
+                        return new Log4jsLoggerService(appConfig);
+                    default:
+                        throw new Error('Invalid logger provider');
+                }
+            }
+        },
         LogInterceptor
     ],
     exports: [
-        Log4jsLoggerService,
-        LokiLoggerService,
+        LOGGER_SERVICE,
         LogInterceptor,
     ]
 })

@@ -28,7 +28,7 @@ import { AppConfig } from "./app.config";
                 }),                
                 LOKI_URL: Joi.when('LOG_MODE', {
                     is: 'loki',
-                    then: Joi.string().empty().default('base-nestjs-backend'),
+                    then: Joi.string().uri({ scheme: ['http', 'https'], allowRelative: false }).required(),
                     otherwise: Joi.string().allow('', null).optional()
                 })
             })

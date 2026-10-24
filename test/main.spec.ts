@@ -2,11 +2,13 @@ import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { SwaggerModule } from '@nestjs/swagger';
 import { AppConfig } from '../src/app.config';
-import { Log4jsLoggerService } from '../src/modules/shared/services/log4jsLogger.service';
-import { LokiLoggerService } from '../src/modules/shared/services/lokiLogger.service';
+import { LOGGER_SERVICE } from '../src/modules/shared/shared.module';
 import { LogInterceptor } from '../src/modules/shared/interceptors/log.interceptor';
 
 jest.mock('../src/app.module', () => ({ AppModule: class {} }));
+jest.mock('../src/modules/shared/shared.module', () => ({
+  LOGGER_SERVICE: Symbol('LOGGER_SERVICE'),
+}));
 jest.mock('@nestjs/common', () => jest.requireActual('@nestjs/common'));
 jest.mock('@nestjs/core', () => ({
   ...jest.requireActual('@nestjs/core'),
@@ -70,10 +72,8 @@ describe('Arranque y apagado', () => {
     config.logMode = 'log4js';
     app.get.mockImplementation((token) => {
       if (token === AppConfig || token.name === 'AppConfig') return config;
-      if (token === Log4jsLoggerService || token.name === 'Log4jsLoggerService')
-        return log4js;
-      if (token === LokiLoggerService || token.name === 'LokiLoggerService')
-        return loki;
+      if (token === LOGGER_SERVICE)
+        return config.logMode === 'log4js' ? log4js : loki;
       if (token === LogInterceptor || token.name === 'LogInterceptor')
         return interceptor;
       throw new Error('Unexpected provider');
@@ -85,6 +85,8 @@ describe('Arranque y apagado', () => {
     jest.mocked(NestFactory.create).mockResolvedValue(app as never);
     jest.spyOn(Logger, 'log').mockImplementation(() => undefined);
     jest.spyOn(Logger, 'error').mockImplementation(() => undefined);
+    // Capture exit requests without terminating the Jest worker.
+    jest.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
     jest.spyOn(SwaggerModule, 'createDocument').mockReturnValue({} as never);
     jest.spyOn(SwaggerModule, 'setup').mockImplementation(() => undefined);
     jest.spyOn(process, 'once').mockImplementation(((
@@ -105,6 +107,11 @@ describe('Arranque y apagado', () => {
     async (mode) => {
       config.logMode = mode;
       await start();
+      expect(NestFactory.create).toHaveBeenCalledWith(expect.any(Function), {
+        bufferLogs: true,
+      });
+      expect(app.get).toHaveBeenCalledWith(LOGGER_SERVICE);
+      expect(process.exit).not.toHaveBeenCalled();
       expect(app.useLogger).toHaveBeenCalledWith(
         mode === 'log4js' ? log4js : loki,
       );
@@ -157,5 +164,31 @@ describe('Arranque y apagado', () => {
       error,
     );
     expect(process.exitCode).toBe(1);
+  });
+
+  it('registra errores de creación y solicita salida con código 1', async () => {
+    const error = new Error('creation failed');
+    jest.mocked(NestFactory.create).mockRejectedValueOnce(error);
+    await start();
+    expect(Logger.error).toHaveBeenCalledWith(
+      'Error starting the application:',
+      error,
+    );
+    expect(process.exit).toHaveBeenCalledWith(1);
+    expect(app.listen).not.toHaveBeenCalled();
+  });
+
+  it('registra errores al abrir el puerto sin anunciar un inicio exitoso', async () => {
+    const error = new Error('EADDRINUSE');
+    app.listen.mockRejectedValueOnce(error);
+    await start();
+    expect(Logger.error).toHaveBeenCalledWith(
+      'Error starting the application:',
+      error,
+    );
+    expect(process.exit).toHaveBeenCalledWith(1);
+    expect(Logger.log).not.toHaveBeenCalledWith(
+      'test-app running on port 3210',
+    );
   });
 });

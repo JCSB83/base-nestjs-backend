@@ -75,4 +75,28 @@ describe('Validación de configuración', () => {
       }).error,
     ).toBeUndefined();
   });
+
+  it.each([undefined, '', null, '/relative', 'loki', 'ftp://localhost:3100'])(
+    'rechaza LOKI_URL inválida en modo Loki: %s',
+    (url) => {
+      expect(
+        schema.validate({ ...valid, LOG_MODE: 'loki', LOKI_URL: url }).error
+          ?.message,
+      ).toContain('LOKI_URL');
+    },
+  );
+
+  it.each(['http://localhost:3100', 'https://loki.example.com'])(
+    'acepta URL absoluta HTTP(S): %s',
+    (url) => {
+      expect(
+        schema.validate({ ...valid, LOG_MODE: 'loki', LOKI_URL: url }).error,
+      ).toBeUndefined();
+    },
+  );
+
+  it('permite omitir LOKI_URL en modo Log4js', () => {
+    expect(schema.validate(valid).error).toBeUndefined();
+    expect(schema.validate(valid).value.LOKI_URL).toBeUndefined();
+  });
 });

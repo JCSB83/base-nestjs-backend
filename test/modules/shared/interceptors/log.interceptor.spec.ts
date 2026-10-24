@@ -17,7 +17,7 @@ describe('LogInterceptor', () => {
 
   beforeEach(() => {
     for (const method of ['log', 'warn', 'error', 'verbose'] as const)
-      jest.spyOn(Logger, method).mockImplementation(() => undefined);
+      jest.spyOn(Logger.prototype, method).mockImplementation(() => undefined);
     jest.spyOn(Utils, 'generateLogId').mockReturnValue('00000042');
     jest.spyOn(Date, 'now').mockReturnValueOnce(100).mockReturnValue(125);
     req = { method: 'GET', originalUrl: '/health/live', url: '/live' };
@@ -34,11 +34,11 @@ describe('LogInterceptor', () => {
       lastValueFrom(interceptor.intercept(context, { handle: () => of(body) })),
     ).resolves.toBe(body);
     expect(req.logId).toBe('00000042');
-    expect(Logger.log).toHaveBeenNthCalledWith(
+    expect(Logger.prototype.log).toHaveBeenNthCalledWith(
       1,
       '[00000042] PATH=GET:/health/live',
     );
-    expect(Logger.log).toHaveBeenLastCalledWith(
+    expect(Logger.prototype.log).toHaveBeenLastCalledWith(
       '[00000042] STATUS=200 MESSAGE=ok DATA={"message":"ok","count":2} TIME=25ms',
     );
   });
@@ -50,8 +50,11 @@ describe('LogInterceptor', () => {
       interceptor.intercept(context, { handle: () => of('hello') }),
     );
     expect(Utils.generateLogId).not.toHaveBeenCalled();
-    expect(Logger.log).toHaveBeenNthCalledWith(1, '[existing] PATH=GET:/live');
-    expect(Logger.log).toHaveBeenLastCalledWith(
+    expect(Logger.prototype.log).toHaveBeenNthCalledWith(
+      1,
+      '[existing] PATH=GET:/live',
+    );
+    expect(Logger.prototype.log).toHaveBeenLastCalledWith(
       expect.stringContaining('MESSAGE=hello DATA="hello"'),
     );
   });
@@ -66,7 +69,7 @@ describe('LogInterceptor', () => {
           }),
       }),
     );
-    expect(Logger.log).toHaveBeenLastCalledWith(
+    expect(Logger.prototype.log).toHaveBeenLastCalledWith(
       '[00000042] STATUS=200 TIME=25ms',
     );
   });
@@ -79,7 +82,7 @@ describe('LogInterceptor', () => {
           interceptor.intercept(context, { handle: () => of(body) }),
         ),
       ).resolves.toEqual(body);
-      expect(Logger.log).toHaveBeenLastCalledWith(
+      expect(Logger.prototype.log).toHaveBeenLastCalledWith(
         expect.not.stringContaining('MESSAGE='),
       );
     },
@@ -95,7 +98,7 @@ describe('LogInterceptor', () => {
     await lastValueFrom(
       interceptor.intercept(context, { handle: () => of('response') }),
     );
-    expect(Logger[method]).toHaveBeenLastCalledWith(
+    expect(Logger.prototype[method]).toHaveBeenLastCalledWith(
       expect.stringContaining(`STATUS=${status}`),
     );
   });
@@ -111,10 +114,10 @@ describe('LogInterceptor', () => {
           }),
         ),
       ).rejects.toBe(error);
-      expect(Logger.warn).toHaveBeenCalledWith(
+      expect(Logger.prototype.warn).toHaveBeenCalledWith(
         expect.stringContaining('STATUS=403'),
       );
-      expect(Logger.warn).toHaveBeenCalledWith(
+      expect(Logger.prototype.warn).toHaveBeenCalledWith(
         expect.stringContaining(`DATA=${JSON.stringify(body)}`),
       );
     },
@@ -129,10 +132,10 @@ describe('LogInterceptor', () => {
         }),
       ),
     ).rejects.toBe(error);
-    expect(Logger.error).toHaveBeenCalledWith(
+    expect(Logger.prototype.error).toHaveBeenCalledWith(
       expect.stringContaining('STATUS=500 MESSAGE=Internal server error'),
     );
-    expect(Logger.error).toHaveBeenCalledWith(
+    expect(Logger.prototype.error).toHaveBeenCalledWith(
       expect.not.stringContaining('database password'),
     );
   });
@@ -150,7 +153,7 @@ describe('LogInterceptor', () => {
         }),
       ),
     ).rejects.toBe(error);
-    expect(Logger.error).toHaveBeenCalledWith(
+    expect(Logger.prototype.error).toHaveBeenCalledWith(
       '[00000042] STATUS=503 MESSAGE=unavailable TIME=25ms',
     );
   });

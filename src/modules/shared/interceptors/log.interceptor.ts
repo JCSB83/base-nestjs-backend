@@ -4,6 +4,8 @@ import { Utils } from "../utils/utils";
 
 @Injectable()
 export class LogInterceptor implements NestInterceptor {
+    private readonly logger = new Logger(LogInterceptor.name);
+
     intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
         const req = context.switchToHttp().getRequest();
         const res = context.switchToHttp().getResponse();
@@ -11,7 +13,7 @@ export class LogInterceptor implements NestInterceptor {
             req.logId = Utils.generateLogId();    
         }
         
-        Logger.log(`[${req.logId}] PATH=${req.method}:${req.originalUrl || req.url}`);
+        this.logger.log(`[${req.logId}] PATH=${req.method}:${req.originalUrl || req.url}`);
         req.logData = true;
 
         const start = Date.now();
@@ -54,10 +56,10 @@ export class LogInterceptor implements NestInterceptor {
 
                 const statusCode = Math.floor(status / 100);
                 switch (statusCode) {
-                    case 2: Logger.log(logMsg); break;
-                    case 4: Logger.warn(logMsg); break;
-                    case 5: Logger.error(logMsg); break;
-                    default: Logger.verbose(logMsg); break;
+                    case 2: this.logger.log(logMsg); break;
+                    case 4: this.logger.warn(logMsg); break;
+                    case 5: this.logger.error(logMsg); break;
+                    default: this.logger.verbose(logMsg); break;
                 }
             })
         );

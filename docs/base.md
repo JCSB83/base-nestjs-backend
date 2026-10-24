@@ -4,29 +4,35 @@ Documentación del código de `src` y de sus pruebas unitarias. El proyecto ofre
 
 ## Estructura
 
-| Archivo                                                                                                         | Responsabilidad                                                                                                    |
-| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| [`src/main.ts`](../src/main.ts)                                                                                 | Arranque, Swagger, logger, validación, interceptor y cierre por señales.                                           |
-| [`src/app.module.ts`](../src/app.module.ts)                                                                     | Módulo raíz; importa configuración y servicios compartidos.                                                        |
-| [`src/app.config.module.ts`](../src/app.config.module.ts)                                                       | Carga y validación de variables con ConfigModule y Joi; exporta AppConfig globalmente.                             |
-| [`src/app.config.ts`](../src/app.config.ts)                                                                     | Getters tipados sobre ConfigService.getOrThrow.                                                                    |
-| [`src/modules/shared/shared.module.ts`](../src/modules/shared/shared.module.ts)                                 | Importa TerminusModule y registra HealthController, ambos loggers y LogInterceptor. Exporta loggers e interceptor. |
-| [`src/modules/shared/controllers/health.controller.ts`](../src/modules/shared/controllers/health.controller.ts) | Endpoints de vida y disponibilidad.                                                                                |
-| [`src/modules/shared/interceptors/log.interceptor.ts`](../src/modules/shared/interceptors/log.interceptor.ts)   | Registra ruta, respuesta, estado y duración de las solicitudes.                                                    |
-| [`src/modules/shared/services/log4jsLogger.service.ts`](../src/modules/shared/services/log4jsLogger.service.ts) | Logs a consola y archivos rotativos.                                                                               |
-| [`src/modules/shared/services/lokiLogger.service.ts`](../src/modules/shared/services/lokiLogger.service.ts)     | Envío HTTP a Loki y salida coloreada en consola.                                                                   |
-| [`src/modules/shared/utils/utils.ts`](../src/modules/shared/utils/utils.ts)                                     | Identificadores aleatorios de ocho dígitos para correlación de logs.                                               |
-| [`src/@types/express/index.d.ts`](../src/@types/express/index.d.ts)                                             | Extiende Request con logId y logData; no ejecuta lógica en tiempo de ejecución.                                    |
+| Archivo                                                                                                         | Responsabilidad                                                                                                                              |
+| --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`src/main.ts`](../src/main.ts)                                                                                 | Arranque, Swagger, logger, validación, interceptor y cierre por señales.                                                                     |
+| [`src/app.module.ts`](../src/app.module.ts)                                                                     | Módulo raíz; importa configuración y servicios compartidos.                                                                                  |
+| [`src/app.config.module.ts`](../src/app.config.module.ts)                                                       | Carga y validación de variables con ConfigModule y Joi; exporta AppConfig globalmente.                                                       |
+| [`src/app.config.ts`](../src/app.config.ts)                                                                     | Getters tipados sobre ConfigService.getOrThrow.                                                                                              |
+| [`src/modules/shared/shared.module.ts`](../src/modules/shared/shared.module.ts)                                 | Importa TerminusModule, registra HealthController y crea el logger seleccionado mediante LOGGER_SERVICE. Exporta ese token y LogInterceptor. |
+| [`src/modules/shared/controllers/health.controller.ts`](../src/modules/shared/controllers/health.controller.ts) | Endpoints de vida y disponibilidad.                                                                                                          |
+| [`src/modules/shared/interceptors/log.interceptor.ts`](../src/modules/shared/interceptors/log.interceptor.ts)   | Registra ruta, respuesta, estado y duración de las solicitudes.                                                                              |
+| [`src/modules/shared/services/log4jsLogger.service.ts`](../src/modules/shared/services/log4jsLogger.service.ts) | Logs a consola y archivos rotativos.                                                                                                         |
+| [`src/modules/shared/services/lokiLogger.service.ts`](../src/modules/shared/services/lokiLogger.service.ts)     | Envío HTTP a Loki y salida coloreada en consola.                                                                                             |
+| [`src/modules/shared/utils/utils.ts`](../src/modules/shared/utils/utils.ts)                                     | Identificadores aleatorios de ocho dígitos para correlación de logs.                                                                         |
+| [`src/@types/express/index.d.ts`](../src/@types/express/index.d.ts)                                             | Extiende Request con logId y logData; no ejecuta lógica en tiempo de ejecución.                                                              |
 
 ## Flujo de arranque
 
-`bootstrap()` crea la aplicación con `NestFactory.create(AppModule)` y obtiene `AppConfig`. Configura Swagger en `/swagger` con nombre, descripción y versión de la aplicación. Selecciona `Log4jsLoggerService` cuando `LOG_MODE=log4js`; en el otro modo validado selecciona `LokiLoggerService`.
+`bootstrap()` crea la aplicación con `NestFactory.create(AppModule, { bufferLogs: true })` y obtiene `AppConfig`. Los mensajes iniciales se almacenan hasta instalar el logger. Configura Swagger en `/swagger` con nombre, descripción y versión de la aplicación. `configureLogger()` obtiene el provider mediante `app.get<LoggerService>(LOGGER_SERVICE)` y lo instala con `app.useLogger()`.
+
+La selección del logger está centralizada en `SharedModule`: una factory que recibe `AppConfig` construye `LokiLoggerService` cuando `LOG_MODE=loki` o `Log4jsLoggerService` cuando `LOG_MODE=log4js`. Solo se construye el servicio seleccionado. Un modo distinto lanza `Error('Invalid logger provider')`, además de la validación previa de Joi.
+
+`LOGGER_SERVICE` es un `Symbol` exportado por `shared.module.ts`. `SharedModule` exporta ese token y `LogInterceptor`; las clases concretas de los loggers ya no se registran ni exportan como providers independientes. Para consumir o sustituir el logger en una prueba, debe utilizarse el mismo token importado, no un nuevo `Symbol` con igual descripción.
 
 Registra un `ValidationPipe` global con `whitelist: true`, `forbidNonWhitelisted: true` y `transform: true`. Para los endpoints que utilicen DTO con decoradores de validación, rechaza propiedades no permitidas y transforma la entrada según los tipos y configuración del DTO. Los endpoints de salud actuales no reciben DTO.
 
 Instala `LogInterceptor` globalmente y los manejadores de cierre. Finalmente, `app.listen(appConfig.port, callback)` abre el puerto y registra el mensaje de inicio. La función se invoca al cargar `main.ts`.
 
 `AppModule` y `AppConfigModule` registran su inicialización mediante `onModuleInit()`.
+
+El cuerpo de `bootstrap()` está protegido por `try/catch`. Los errores que llegan a ese bloque se registran como `Error starting the application:` y provocan `process.exit(1)`. Este manejo es distinto del cierre normal por señales descrito a continuación.
 
 ### Cierre
 
@@ -47,7 +53,7 @@ Los manejadores de `SIGINT` y `SIGTERM` se registran con `process.once`. Una ban
 | `LOG_LEVEL`       | `logLevel`       | Obligatorio: `ALL`, `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`, `MARK` u `OFF`.                                   |
 | `LOG_DIR`         | `logDir`         | En Log4js, por defecto `./logs`; en Loki admite vacío, null o ausencia.                                                   |
 | `LOG_NAME`        | `logName`        | En Log4js, por defecto `base-nestjs-backend`; en Loki es opcional. No se usa para construir el nombre del archivo actual. |
-| `LOKI_URL`        | `lokiURL`        | En Loki, el esquema asigna `base-nestjs-backend` si falta; no valida formato URL. En Log4js es opcional.                  |
+| `LOKI_URL`        | `lokiURL`        | Obligatoria en modo Loki: URL absoluta HTTP o HTTPS, sin valor predeterminado. En Log4js admite vac?o, null o ausencia.   |
 
 Ejemplo de configuración local explícita:
 
@@ -64,7 +70,7 @@ LOG_NAME=base-nestjs-backend
 LOKI_URL=http://127.0.0.1:3100
 ```
 
-Para utilizar Loki, cambia `LOG_MODE=loki` y define una URL HTTP válida en `LOKI_URL`. Ambos loggers están registrados como providers y se construyen aunque solo uno se seleccione como logger global. Por ello, conviene conservar explícitamente las variables de ambos servicios: la opcionalidad del esquema no garantiza que sus constructores toleren valores ausentes. `example.env` actualmente repite `LOG_MODE`; deja una sola asignación en tu configuración.
+Para utilizar Loki, cambia `LOG_MODE=loki` y define una URL absoluta HTTP o HTTPS en `LOKI_URL`. Joi exige esa variable en modo Loki y rechaza rutas relativas o esquemas diferentes. En modo Log4js se puede omitir `LOKI_URL`, porque la factory no construye el servicio Loki. En modo Loki, `LOG_DIR` y `LOG_NAME` son opcionales y no se crea el logger de archivos. `LOG_LEVEL` sigue siendo obligatorio en ambos modos, aunque el logger Loki no lo utiliza para filtrar. `example.env` actualmente repite `LOG_MODE`; deja una sola asignación en tu configuración.
 
 ## Endpoints
 
@@ -84,7 +90,7 @@ Los dos métodos de salud asignan `req.logData=false` para omitir el cuerpo de r
 
 ## Logs de solicitudes
 
-`LogInterceptor.intercept()` obtiene Request y Response del contexto HTTP. Conserva `req.logId` cuando existe; en caso contrario genera uno. Registra `PATH=<método>:<originalUrl o url>`, activa inicialmente `req.logData` y toma el instante inicial.
+`LogInterceptor` utiliza una instancia `new Logger(LogInterceptor.name)`, de modo que sus mensajes llevan el contexto `LogInterceptor` al logger configurado. `intercept()` obtiene Request y Response del contexto HTTP. Conserva `req.logId` cuando existe; en caso contrario genera uno. Registra `PATH=<método>:<originalUrl o url>`, activa inicialmente `req.logData` y toma el instante inicial.
 
 Al recibir la respuesta, captura `message` si está presente en el objeto o utiliza la respuesta si es una cadena. Serializa el cuerpo como JSON cuando `logData` permanece activado. El controlador puede desactivarlo durante su ejecución.
 
@@ -133,10 +139,23 @@ Las pruebas están en [`test`](../test). Jest usa la raíz del proyecto, descubr
 
 Las suites comprueban getters y validación de configuración, resolución de dependencias de los módulos, salud, correlación y severidad de logs, envío y errores de Loki, configuración y delegación de Log4js, generación de IDs, selección del logger, configuración de Swagger, solicitud de apertura del puerto y cierre por señales. Los transportes, salidas y aplicación de arranque se simulan; no requieren Loki, no abren un servidor real y no validan una integración remota. Terminus se simula en `test/setup.ts` y Swagger en la prueba de arranque: se comprueba cómo los utiliza la aplicación, no su implementación interna. Las declaraciones de tipos se comprueban mediante compilación y no tienen pruebas ejecutables propias.
 
+### Pruebas de los cambios actuales
+
+- `test/modules/shared/shared.module.spec.ts` comprueba que la factory construye solo el logger elegido, lo expone mediante `LOGGER_SERVICE` y rechaza un modo desconocido. Los constructores de los loggers se simulan para evitar red y archivos.
+- `test/modules.spec.ts` sustituye `LOGGER_SERVICE` al comprobar la composición de módulos, en lugar de sustituir las clases concretas.
+- `test/main.spec.ts` verifica el buffer de logs, la resolución por token, el arranque, el cierre y los errores de creación o apertura del puerto. `process.exit` se simula para comprobar el código 1 sin terminar Jest.
+- `test/app.config.module.spec.ts` comprueba que Loki exige una URL absoluta HTTP(S), rechaza valores ausentes, vacíos, relativos o de otro esquema, y permite omitir la URL en Log4js.
+- `test/modules/shared/interceptors/log.interceptor.spec.ts` observa los métodos de instancia de `Logger.prototype`, utilizados por el interceptor actual.
+
+Resultado verificado el 23 de octubre de 2026 con `yarn test --runInBand --coverage`: **84 pruebas aprobadas en 10 suites**; cobertura de **99,53 % de sentencias**, **98,11 % de ramas**, **100 % de funciones** y **99,48 % de líneas**. La línea sin cubrir corresponde a la guardia redundante dentro de `Log4jsLoggerService.configure()`, que no se alcanza desde el flujo público normal después de configurar el servicio. Estos porcentajes describen esta ejecución, no una garantía para cambios posteriores.
+
+### Hooks de Git
+
+`package.json` incluye `prepare: husky`. El hook `.husky/pre-commit` ejecuta `yarn test`. `.husky/commit-msg` ejecuta `yarn commitlint --edit "$1"`; `commitlint.config.cjs` extiende `@commitlint/config-conventional`. Los hooks deben estar instalados para que estas comprobaciones se ejecuten al crear un commit.
+
 ## Consideraciones del código actual
 
-- El inicio de `main.ts` no incorpora un `catch` explícito para errores de `bootstrap()`.
-- El esquema de Loki admite como valor predeterminado una cadena que no es una URL HTTP; define `LOKI_URL` explícitamente.
 - El interceptor serializa cuerpos completos cuando `logData=true`; no contiene una función de ocultación de campos.
-- Los providers de ambos loggers se construyen aunque solo uno se use globalmente.
+- Loki no filtra por `LOG_LEVEL`, y la salida en consola espera a que finalice cada envío HTTP.
+- El cierre no espera explícitamente los envíos pendientes a Loki.
 - No se implementan módulos de negocio, persistencia ni autenticación en el árbol de `src` documentado.
