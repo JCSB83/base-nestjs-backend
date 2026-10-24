@@ -1,0 +1,17 @@
+# Normalizar archivos de texto a LF
+* text=auto
+
+# TypeScript y JavaScript
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+
+# Configuración
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sh text eol=lf
+
+# Archivos Windows
+*.bat text eol=crlf
+*.cmd text eol=crlf
