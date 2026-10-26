@@ -71,21 +71,18 @@
       "ts"
     ],
     "rootDir": ".",
-    "testRegex": "test/.*\\.spec\\.ts$",
+    "testRegex": "(src|test)/.*\\.spec\\.ts$",
     "moduleNameMapper": {
       "^src/(.*)$": "<rootDir>/src/$1"
     },
     "transformIgnorePatterns": [
       "node_modules/(?!(@nestjs/config|es-toolkit)/)"
     ],
-    "setupFilesAfterEnv": [
-      "<rootDir>/test/setup.ts"
-    ],
     "transform": {
       "^.+\\.(t|j)s$": [
         "ts-jest",
         {
-          "tsconfig": "test/tsconfig.json"
+          "tsconfig": "tsconfig.spec.json"
         }
       ]
     },
