@@ -160,6 +160,45 @@ describe('LokiLoggerService', () => {
     });
     expect(() => new LokiLoggerService(config)).toThrow(error);
   });
+  it('mantiene independiente el estado de envios concurrentes', async () => {
+    let succeed!: () => void;
+    let fail!: (error: Error) => void;
+    post.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        succeed = resolve;
+      }),
+    );
+    post.mockReturnValueOnce(
+      new Promise<void>((_resolve, reject) => {
+        fail = reject;
+      }),
+    );
+    service.log('first');
+    service.log('second');
+    const error = new Error('second failed');
+    fail(error);
+    await flush();
+    expect(consoleLog).toHaveBeenCalledTimes(1);
+    expect(consoleLog).toHaveBeenLastCalledWith(
+      expect.stringContaining(
+        '[loki OFF] [INFO] {"message":"second","params":[]}',
+      ),
+    );
+    succeed();
+    await flush();
+    expect(consoleLog).toHaveBeenCalledTimes(2);
+    expect(consoleLog).toHaveBeenLastCalledWith(
+      expect.stringContaining(
+        '[loki ON] [INFO] {"message":"first","params":[]}',
+      ),
+    );
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith(
+      'Error enviando log a Loki:',
+      error,
+    );
+    expect(post).toHaveBeenCalledTimes(2);
+  });
   it('no envia mensajes no serializables', () => {
     const circular: { self?: unknown } = {};
     circular.self = circular;

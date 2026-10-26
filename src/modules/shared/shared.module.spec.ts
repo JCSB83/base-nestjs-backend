@@ -14,7 +14,9 @@ jest.mock('./services/log4jsLogger.service', () => ({
 jest.mock('./services/lokiLogger.service', () => ({
   LokiLoggerService: jest.fn(),
 }));
-import { LoggerService } from '@nestjs/common';
+import { FactoryProvider, LoggerService } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { HealthCheckService, HttpHealthIndicator } from '@nestjs/terminus';
 import { AppConfig } from 'src/app.config';
 import { SharedModule, LOGGER_SERVICE } from './shared.module';
 import { Log4jsLoggerService } from './services/log4jsLogger.service';
@@ -23,11 +25,7 @@ import { LogInterceptor } from './interceptors/log.interceptor';
 import { HealthController } from './controllers/health.controller';
 import { TerminusModule } from '@nestjs/terminus';
 describe('SharedModule', () => {
-  type Factory = {
-    provide: symbol;
-    inject: unknown[];
-    useFactory: (config: AppConfig) => LoggerService;
-  };
+  type Factory = FactoryProvider<LoggerService>;
   const providers = Reflect.getMetadata('providers', SharedModule) as (
     Factory | typeof LogInterceptor
   )[];
@@ -36,6 +34,50 @@ describe('SharedModule', () => {
       typeof provider === 'object' && provider.provide === LOGGER_SERVICE,
   )!;
   beforeEach(() => jest.clearAllMocks());
+  it.each(['loki', 'log4js'])(
+    'resuelve el modulo y reutiliza el logger %s mediante inyeccion',
+    async (logMode) => {
+      const config = { logMode } as AppConfig;
+      const check = jest.fn().mockResolvedValue({ status: 'ok' });
+      const module = await Test.createTestingModule({ imports: [SharedModule] })
+        .useMocker((token) => {
+          if (token === AppConfig) return config;
+          if (token === HealthCheckService) return { check };
+          if (token === HttpHealthIndicator) return { pingCheck: jest.fn() };
+        })
+        .compile();
+      try {
+        const selected =
+          logMode === 'loki' ? LokiLoggerService : Log4jsLoggerService;
+        expect(module.get(LOGGER_SERVICE)).toBeInstanceOf(selected);
+        expect(module.get(LOGGER_SERVICE)).toBe(module.get(LOGGER_SERVICE));
+        expect(selected).toHaveBeenCalledTimes(1);
+        expect(selected).toHaveBeenCalledWith(config);
+        expect(module.get(LogInterceptor)).toBeInstanceOf(LogInterceptor);
+        await expect(
+          module
+            .get(HealthController)
+            .live({} as Parameters<HealthController['live']>[0]),
+        ).resolves.toEqual({ status: 'ok' });
+        expect(check).toHaveBeenCalledWith([]);
+      } finally {
+        await module.close();
+      }
+    },
+  );
+  it('rechaza la compilacion de Nest con un modo de logger invalido', async () => {
+    await expect(
+      Test.createTestingModule({
+        providers: [
+          factory,
+          {
+            provide: AppConfig,
+            useValue: { logMode: 'invalid' },
+          },
+        ],
+      }).compile(),
+    ).rejects.toThrow('Invalid logger provider');
+  });
   it.each(['loki', 'log4js'])(
     'selecciona solamente el proveedor %s',
     (logMode) => {

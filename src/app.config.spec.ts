@@ -1,7 +1,23 @@
 import { ConfigService } from '@nestjs/config';
+import { Test } from '@nestjs/testing';
 import { AppConfig, appConfigSchema } from './app.config';
 
 describe('AppConfig', () => {
+  it('recibe ConfigService a traves del contenedor Nest', async () => {
+    const getOrThrow = jest.fn().mockReturnValue(3210);
+    const module = await Test.createTestingModule({
+      providers: [
+        AppConfig,
+        { provide: ConfigService, useValue: { getOrThrow } },
+      ],
+    }).compile();
+    try {
+      expect(module.get(AppConfig).port).toBe(3210);
+      expect(getOrThrow).toHaveBeenCalledWith('PORT');
+    } finally {
+      await module.close();
+    }
+  });
   it.each([
     ['port', 'PORT', 3000],
     ['environment', 'ENVIRONMENT', 'QA'],
@@ -54,6 +70,27 @@ describe('appConfigSchema', () => {
       ).toBeUndefined();
     },
   );
+  it.each([0, 65535])('acepta el puerto limite %s', (PORT) => {
+    expect(appConfigSchema.validate({ ...valid, PORT }).error).toBeUndefined();
+  });
+  it.each([
+    'ALL',
+    'TRACE',
+    'DEBUG',
+    'INFO',
+    'WARN',
+    'ERROR',
+    'FATAL',
+    'MARK',
+    'OFF',
+  ])('acepta el nivel de log %s', (LOG_LEVEL) => {
+    expect(
+      appConfigSchema.validate({ ...valid, LOG_LEVEL }).error,
+    ).toBeUndefined();
+  });
+  it.each([1.5, 'invalid', null])('rechaza un puerto no entero: %j', (PORT) => {
+    expect(appConfigSchema.validate({ ...valid, PORT }).error).toBeDefined();
+  });
   it.each([
     { PORT: -1 },
     { PORT: 65536 },
