@@ -4,6 +4,9 @@
 /build
 /tmp
 
+# Test coverage
+/coverage/
+
 # Logs
 logs
 *.log
