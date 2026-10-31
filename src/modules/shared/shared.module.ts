@@ -1,4 +1,4 @@
-import { LoggerService, Module } from "@nestjs/common";
+import { Logger, LoggerService, Module, OnModuleInit } from "@nestjs/common";
 import { TerminusModule } from "@nestjs/terminus";
 import { HealthController } from "./controllers/health.controller";
 import { Log4jsLoggerService } from "./services/log4jsLogger.service";
@@ -37,4 +37,8 @@ export const LOGGER_SERVICE = Symbol('LOGGER_SERVICE');
         LogInterceptor,
     ]
 })
-export class SharedModule {}
+export class SharedModule implements OnModuleInit {
+    onModuleInit() {
+        Logger.log('SharedModule initialized');
+    }
+}

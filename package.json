@@ -4,7 +4,7 @@
   "description": "",
   "author": "",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -71,21 +71,18 @@
       "ts"
     ],
     "rootDir": ".",
-    "testRegex": "test/.*\\.spec\\.ts$",
+    "testRegex": "(src|test)/.*\\.spec\\.ts$",
     "moduleNameMapper": {
       "^src/(.*)$": "<rootDir>/src/$1"
     },
     "transformIgnorePatterns": [
-      "node_modules/(?!(@nestjs/config|es-toolkit)/)"
-    ],
-    "setupFilesAfterEnv": [
-      "<rootDir>/test/setup.ts"
+      "node_modules/(?!(?:\\.pnpm/|@nestjs/config/|es-toolkit/))"
     ],
     "transform": {
       "^.+\\.(t|j)s$": [
         "ts-jest",
         {
-          "tsconfig": "test/tsconfig.json"
+          "tsconfig": "tsconfig.spec.json"
         }
       ]
     },
@@ -94,6 +91,14 @@
       "!src/**/*.d.ts"
     ],
     "coverageDirectory": "coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "coverageThreshold": {
+      "global": {
+        "branches": 80,
+        "functions": 80,
+        "lines": 80,
+        "statements": 80
+      }
+    }
   }
 }
