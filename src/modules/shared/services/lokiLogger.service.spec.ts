@@ -4,7 +4,7 @@ jest.mock('axios', () => ({
 }));
 import axios, { AxiosInstance } from 'axios';
 import { AppConfig } from 'src/app.config';
-import { LokiLoggerService } from './lokiLogger.service';
+import { LogLevel, LokiLoggerService } from './lokiLogger.service';
 describe('LokiLoggerService', () => {
   let post: jest.Mock;
   let service: LokiLoggerService;
@@ -16,6 +16,7 @@ describe('LokiLoggerService', () => {
     appName: 'app',
     environment: 'TEST',
     lokiURL: 'http://loki.test',
+    logLevel: LogLevel.ALL,
   } as AppConfig;
   // send returns void; drain the catch/finally microtasks without real timers.
   const flush = async () => {
@@ -52,6 +53,86 @@ describe('LokiLoggerService', () => {
       headers: { 'Content-Type': 'application/json' },
     });
   });
+  it.each([
+    {
+      threshold: LogLevel.ALL,
+      levels: ['trace', 'debug', 'info', 'warn', 'error'],
+    },
+    {
+      threshold: LogLevel.TRACE,
+      levels: ['trace', 'debug', 'info', 'warn', 'error'],
+    },
+    { threshold: LogLevel.DEBUG, levels: ['debug', 'info', 'warn', 'error'] },
+    { threshold: LogLevel.INFO, levels: ['info', 'warn', 'error'] },
+    { threshold: LogLevel.MARK, levels: ['warn', 'error'] },
+    { threshold: LogLevel.WARN, levels: ['warn', 'error'] },
+    { threshold: LogLevel.ERROR, levels: ['error'] },
+    { threshold: LogLevel.FATAL, levels: [] },
+    { threshold: LogLevel.OFF, levels: [] },
+  ])(
+    'filtra los mensajes con LOG_LEVEL=$threshold',
+    async ({ threshold, levels }) => {
+      const filteredService = new LokiLoggerService({
+        ...config,
+        logLevel: threshold,
+      } as AppConfig);
+
+      filteredService.verbose('trace');
+      filteredService.debug('debug');
+      filteredService.log('info');
+      filteredService.warn('warn');
+      filteredService.error('error');
+
+      expect(post).toHaveBeenCalledTimes(levels.length);
+      levels.forEach((level, index) => {
+        expect(post).toHaveBeenNthCalledWith(index + 1, '/loki/api/v1/push', {
+          streams: [
+            {
+              stream: { app: 'app', environment: 'TEST', level },
+              values: [
+                [
+                  now.getTime() + '000000',
+                  JSON.stringify({ message: level, params: [] }),
+                ],
+              ],
+            },
+          ],
+        });
+      });
+      await flush();
+      expect(consoleDebug).toHaveBeenCalledTimes(
+        levels.includes('debug') ? 1 : 0,
+      );
+      const consoleLevels = levels.filter((level) => level !== 'debug');
+      expect(consoleLog).toHaveBeenCalledTimes(consoleLevels.length);
+      consoleLevels.forEach((level, index) => {
+        expect(consoleLog).toHaveBeenNthCalledWith(
+          index + 1,
+          expect.stringContaining(`[loki ON] [${level.toUpperCase()}]`),
+        );
+      });
+      expect(consoleError).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['log', 'error', 'warn', 'debug', 'verbose'] as const)(
+    'OFF omite la serializacion de mensajes en %s',
+    async (method) => {
+      const disabledService = new LokiLoggerService({
+        ...config,
+        logLevel: LogLevel.OFF,
+      } as AppConfig);
+      const circular: { self?: unknown } = {};
+      circular.self = circular;
+
+      expect(() => disabledService[method](circular)).not.toThrow();
+      await flush();
+      expect(post).not.toHaveBeenCalled();
+      expect(consoleLog).not.toHaveBeenCalled();
+      expect(consoleDebug).not.toHaveBeenCalled();
+      expect(consoleError).not.toHaveBeenCalled();
+    },
+  );
   it.each([
     { method: 'log', level: 'info', color: 32 },
     { method: 'error', level: 'error', color: 31 },

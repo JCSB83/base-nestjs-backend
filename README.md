@@ -15,10 +15,10 @@ Base para desarrollar APIs HTTP con **NestJS y TypeScript**. Reúne configuraci�
 
 ## Inicio rápido
 
-Instala las dependencias con `yarn install` y crea un archivo `.env` tomando como referencia [`example.env`](example.env). Deja una sola asignación de `LOG_MODE`: utiliza `log4js` para logs locales o `loki` con una `LOKI_URL` absoluta HTTP(S).
+Instala las dependencias con `pnpm install` y crea un archivo `.env` tomando como referencia [`example.env`](example.env). Deja una sola asignación de `LOG_MODE`: utiliza `log4js` para logs locales o `loki` con una `LOKI_URL` absoluta HTTP(S).
 
 ```bash
-yarn start:dev
+pnpm start:dev
 ```
 
 El servidor escucha en el puerto definido por `PORT`. Con `PORT=3210`, puedes consultar `http://localhost:3210/health/live` y abrir `http://localhost:3210/swagger`.
@@ -27,13 +27,13 @@ El servidor escucha en el puerto definido por `PORT`. Con `PORT=3210`, puedes co
 
 | Comando                     | Función                                             |
 | --------------------------- | --------------------------------------------------- |
-| `yarn start:dev`            | Iniciar en desarrollo con recompilación automática. |
-| `yarn build`                | Compilar el código a `dist`.                        |
-| `yarn start:prod`           | Ejecutar la compilación existente.                  |
-| `yarn test --runInBand`     | Ejecutar las pruebas unitarias.                     |
-| `yarn test:cov --runInBand` | Ejecutar pruebas y generar cobertura.               |
+| `pnpm start:dev`            | Iniciar en desarrollo con recompilación automática. |
+| `pnpm build`                | Compilar el código a `dist`.                        |
+| `pnpm start:prod`           | Ejecutar la compilación existente.                  |
+| `pnpm test --runInBand`     | Ejecutar las pruebas unitarias.                     |
+| `pnpm test:cov --runInBand` | Ejecutar pruebas y generar cobertura.               |
 
-En PowerShell, puedes usar `yarn.cmd` si la política de ejecución bloquea `yarn.ps1`.
+En PowerShell, puedes usar `pnpm.cmd` si la política de ejecución bloquea `pnpm.ps1`.
 
 ## Estructura y documentación
 
