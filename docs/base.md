@@ -9,13 +9,13 @@ Documentación del código de `src` y de sus pruebas unitarias. El proyecto ofre
 | [`src/main.ts`](../src/main.ts)                                                                                 | Arranque, Swagger, logger, validación, interceptor y cierre por señales.                                                                     |
 | [`src/app.module.ts`](../src/app.module.ts)                                                                     | Módulo raíz; importa configuración y servicios compartidos.                                                                                  |
 | [`src/app.config.module.ts`](../src/app.config.module.ts)                                                       | Carga y validación de variables con ConfigModule y Joi; exporta AppConfig globalmente.                                                       |
-| [`src/app.config.ts`](../src/app.config.ts)                                                                     | Getters tipados sobre ConfigService.getOrThrow.                                                                                              |
+| [`src/app.config.ts`](../src/app.config.ts)                                                                     | Getters tipados sobre ConfigService.getOrThrow y esquema Joi de configuración.                                                               |
 | [`src/modules/shared/shared.module.ts`](../src/modules/shared/shared.module.ts)                                 | Importa TerminusModule, registra HealthController y crea el logger seleccionado mediante LOGGER_SERVICE. Exporta ese token y LogInterceptor. |
 | [`src/modules/shared/controllers/health.controller.ts`](../src/modules/shared/controllers/health.controller.ts) | Endpoints de vida y disponibilidad.                                                                                                          |
 | [`src/modules/shared/interceptors/log.interceptor.ts`](../src/modules/shared/interceptors/log.interceptor.ts)   | Registra ruta, respuesta, estado y duración de las solicitudes.                                                                              |
 | [`src/modules/shared/services/log4jsLogger.service.ts`](../src/modules/shared/services/log4jsLogger.service.ts) | Logs a consola y archivos rotativos.                                                                                                         |
 | [`src/modules/shared/services/lokiLogger.service.ts`](../src/modules/shared/services/lokiLogger.service.ts)     | Envío HTTP a Loki y salida coloreada en consola.                                                                                             |
-| [`src/modules/shared/utils/utils.ts`](../src/modules/shared/utils/utils.ts)                                     | Identificadores aleatorios de ocho dígitos para correlación de logs.                                                                         |
+| [`src/modules/shared/utils/utils.ts`](../src/modules/shared/utils/utils.ts)                                     | Identificadores de ocho dígitos y combinación de esquemas Joi.                                                                               |
 | [`src/@types/express/index.d.ts`](../src/@types/express/index.d.ts)                                             | Extiende Request con logId y logData; no ejecuta lógica en tiempo de ejecución.                                                              |
 
 ## Flujo de arranque
@@ -30,7 +30,7 @@ Registra un `ValidationPipe` global con `whitelist: true`, `forbidNonWhitelisted
 
 Instala `LogInterceptor` globalmente y los manejadores de cierre. Finalmente, `app.listen(appConfig.port, callback)` abre el puerto y registra el mensaje de inicio. La función se invoca al cargar `main.ts`.
 
-`AppModule` y `AppConfigModule` registran su inicialización mediante `onModuleInit()`.
+`AppModule`, `AppConfigModule` y `SharedModule` registran su inicialización mediante `onModuleInit()`.
 
 El cuerpo de `bootstrap()` está protegido por `try/catch`. Los errores que llegan a ese bloque se registran como `Error starting the application:` y provocan `process.exit(1)`. Este manejo es distinto del cierre normal por señales descrito a continuación.
 
@@ -40,11 +40,11 @@ Los manejadores de `SIGINT` y `SIGTERM` se registran con `process.once`. Una ban
 
 ## Configuración
 
-`AppConfigModule` configura `ConfigModule.forRoot` como global. Los valores se validan con Joi. Los getters de `AppConfig` usan `getOrThrow`, por lo que acceder a un valor ausente puede lanzar una excepción incluso si el esquema lo permite para un modo concreto.
+`AppConfigModule` configura `ConfigModule.forRoot` como global. Los valores se validan con Joi mediante el esquema de `app.config.ts`, combinado con `Utils.mergeConfigSchemas()`. La validación conserva variables ajenas (`allowUnknown: true`) e informa todos los errores (`abortEarly: false`). Los getters de `AppConfig` usan `getOrThrow`, por lo que acceder a un valor ausente puede lanzar una excepción incluso si el esquema lo permite para un modo concreto.
 
 | Variable          | Getter           | Validación o valor predeterminado                                                                                         |
 | ----------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`            | `port`           | Puerto numérico obligatorio.                                                                                              |
+| `PORT`            | `port`           | Entero obligatorio entre 0 y 65535.                                                                                       |
 | `ENVIRONMENT`     | `environment`    | Obligatorio: `LOCAL`, `DEV`, `QA` o `PROD`.                                                                               |
 | `APP_NAME`        | `appName`        | `base-nestjs-backend`.                                                                                                    |
 | `APP_DESCRIPTION` | `appDescription` | Cadena opcional, admite vacío; por defecto `''`.                                                                          |
@@ -53,7 +53,7 @@ Los manejadores de `SIGINT` y `SIGTERM` se registran con `process.once`. Una ban
 | `LOG_LEVEL`       | `logLevel`       | Obligatorio: `ALL`, `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`, `MARK` u `OFF`.                                   |
 | `LOG_DIR`         | `logDir`         | En Log4js, por defecto `./logs`; en Loki admite vacío, null o ausencia.                                                   |
 | `LOG_NAME`        | `logName`        | En Log4js, por defecto `base-nestjs-backend`; en Loki es opcional. No se usa para construir el nombre del archivo actual. |
-| `LOKI_URL`        | `lokiURL`        | Obligatoria en modo Loki: URL absoluta HTTP o HTTPS, sin valor predeterminado. En Log4js admite vac?o, null o ausencia.   |
+| `LOKI_URL`        | `lokiURL`        | Obligatoria en modo Loki: URL absoluta HTTP o HTTPS, sin valor predeterminado. En Log4js admite vacío, null o ausencia.   |
 
 Ejemplo de configuración local explícita:
 
@@ -70,7 +70,7 @@ LOG_NAME=base-nestjs-backend
 LOKI_URL=http://127.0.0.1:3100
 ```
 
-Para utilizar Loki, cambia `LOG_MODE=loki` y define una URL absoluta HTTP o HTTPS en `LOKI_URL`. Joi exige esa variable en modo Loki y rechaza rutas relativas o esquemas diferentes. En modo Log4js se puede omitir `LOKI_URL`, porque la factory no construye el servicio Loki. En modo Loki, `LOG_DIR` y `LOG_NAME` son opcionales y no se crea el logger de archivos. `LOG_LEVEL` sigue siendo obligatorio en ambos modos, aunque el logger Loki no lo utiliza para filtrar. `example.env` actualmente repite `LOG_MODE`; deja una sola asignación en tu configuración.
+Para utilizar Loki, cambia `LOG_MODE=loki` y define una URL absoluta HTTP o HTTPS en `LOKI_URL`. Joi exige esa variable en modo Loki y rechaza rutas relativas o esquemas diferentes. En modo Log4js se puede omitir `LOKI_URL`, porque la factory no construye el servicio Loki. En modo Loki, `LOG_DIR` y `LOG_NAME` son opcionales y no se crea el logger de archivos. `LOG_LEVEL` es obligatorio y filtra los mensajes en ambos modos. Crea un archivo `.env` a partir del ejemplo anterior; actualmente no existe `example.env` en el proyecto.
 
 ## Endpoints
 
@@ -113,49 +113,72 @@ Una bandera estática evita configurar Log4js más de una vez por carga del mód
 
 ## LokiLoggerService
 
-Crea un cliente Axios con `baseURL=LOKI_URL`, timeout de 5000 ms y contenido JSON. Cada llamada envía un POST independiente a `/loki/api/v1/push` con las etiquetas `app`, `environment` y `level`. El timestamp se expresa como una cadena en nanosegundos a partir de `Date.now()`, con precisión efectiva de milisegundos.
+Crea un cliente Axios con `baseURL=LOKI_URL`, timeout de 5000 ms y contenido JSON. Cada llamada admitida por `LOG_LEVEL` envía un POST independiente a `/loki/api/v1/push` con las etiquetas `app`, `environment` y `level`. El timestamp se expresa como una cadena en nanosegundos a partir de `Date.now()`, con precisión efectiva de milisegundos.
 
 El mensaje se serializa como `{ message, params }`. Si el mensaje es un `Error`, incluye también `stack`. Los métodos devuelven el control sin esperar la petición; no hay cola, agrupación ni reintentos implementados.
 
 Cuando la petición termina, `finally` imprime fecha local, estado de envío, nivel y mensaje con colores ANSI. Una petición resuelta muestra `[loki ON]`; una rechazada registra el error directamente con `console.error` y muestra `[loki OFF]`. Estas etiquetas describen ese envío, no un estado global de conexión. La consola se escribe en todos los entornos y puede demorarse mientras la petición está pendiente. Los envíos concurrentes pueden aparecer fuera de orden.
 
-Este servicio no aplica filtrado por `LOG_LEVEL`. Tampoco utiliza su propio método `error()` para fallos de transporte, evitando generar envíos recursivos.
+### Filtrado por nivel
+
+Cada método comprueba `LOG_LEVEL` antes de serializar el mensaje, enviar HTTP o escribir en consola. `log` corresponde a `INFO`, `verbose` a `TRACE`, y `debug`, `warn` y `error` a sus niveles homónimos.
+
+| `LOG_LEVEL`     | Métodos que emiten mensajes                |
+| --------------- | ------------------------------------------ |
+| `ALL` o `TRACE` | `verbose`, `debug`, `log`, `warn`, `error` |
+| `DEBUG`         | `debug`, `log`, `warn`, `error`            |
+| `INFO`          | `log`, `warn`, `error`                     |
+| `MARK` o `WARN` | `warn`, `error`                            |
+| `ERROR`         | `error`                                    |
+| `FATAL` u `OFF` | Ninguno de los cinco métodos implementados |
+
+La prioridad es `ALL < TRACE < DEBUG < INFO < MARK < WARN < ERROR < FATAL < OFF`. No hay métodos `mark()` ni `fatal()` en esta clase; por eso `FATAL` no permite ninguno de sus mensajes. `OFF` desactiva explícitamente todas las emisiones, aunque el constructor sigue creando el cliente Axios.
+
+Un mensaje descartado no se serializa, por lo que incluso un objeto circular se omite sin error. Si el nivel permite enviarlo, un objeto circular provoca un `TypeError` antes del POST. Los fallos de transporte se registran directamente con `console.error`, sin invocar `error()` ni generar envíos recursivos.
 
 ## Ejecución y pruebas
 
 Desde la raíz del proyecto:
 
 ```bash
-yarn start:dev
-yarn build
-yarn start:prod
-yarn test --runInBand
-yarn test:cov --runInBand
+pnpm start:dev
+pnpm build
+pnpm start:prod
+pnpm test --runInBand
+pnpm test:cov --runInBand
 ```
 
-En PowerShell, si la política de ejecución bloquea `yarn.ps1`, utiliza `yarn.cmd` para ejecutar los mismos comandos.
+En PowerShell, si la política de ejecución bloquea `pnpm.ps1`, utiliza `pnpm.cmd` para ejecutar los mismos comandos.
 
-Las pruebas están en [`test`](../test). Jest usa la raíz del proyecto, descubre `test/**/*.spec.ts`, resuelve los imports `src/*` y transforma TypeScript con [`test/tsconfig.json`](../test/tsconfig.json). La compilación de producción excluye `test` mediante `tsconfig.build.json`. La cobertura se escribe en `coverage` y considera los archivos TypeScript de `src`, excluyendo declaraciones `.d.ts`.
+Las pruebas están junto al código en `src/**/*.spec.ts`. Jest usa la raíz del proyecto, busca suites en `src` o `test` mediante `(src|test)/.*\.spec\.ts$`, resuelve los imports `src/*` y transforma TypeScript con `ts-jest` y [`tsconfig.spec.json`](../tsconfig.spec.json). Actualmente no existe el directorio `test`. La compilación de producción excluye `**/*spec.ts` mediante `tsconfig.build.json`.
 
-Las suites comprueban getters y validación de configuración, resolución de dependencias de los módulos, salud, correlación y severidad de logs, envío y errores de Loki, configuración y delegación de Log4js, generación de IDs, selección del logger, configuración de Swagger, solicitud de apertura del puerto y cierre por señales. Los transportes, salidas y aplicación de arranque se simulan; no requieren Loki, no abren un servidor real y no validan una integración remota. Terminus se simula en `test/setup.ts` y Swagger en la prueba de arranque: se comprueba cómo los utiliza la aplicación, no su implementación interna. Las declaraciones de tipos se comprueban mediante compilación y no tienen pruebas ejecutables propias.
+La cobertura se escribe en `coverage` y considera los archivos TypeScript de `src`, excluyendo declaraciones `.d.ts`. Jest exige un mínimo global del 80 % en sentencias, ramas, funciones y líneas.
 
-### Pruebas de los cambios actuales
+Las suites comprueban configuración, inyección de dependencias, salud, respuestas y errores, correlación y severidad de logs, filtrado y envío a Loki, Log4js, utilidades, Swagger y cierre por señales. Axios, Log4js, Terminus, Swagger y la aplicación de arranque se simulan en las suites correspondientes: no requieren Loki ni abren un servidor HTTP real. Estas pruebas no validan integraciones remotas, rotación real de archivos ni el pipeline HTTP completo.
 
-- `test/modules/shared/shared.module.spec.ts` comprueba que la factory construye solo el logger elegido, lo expone mediante `LOGGER_SERVICE` y rechaza un modo desconocido. Los constructores de los loggers se simulan para evitar red y archivos.
-- `test/modules.spec.ts` sustituye `LOGGER_SERVICE` al comprobar la composición de módulos, en lugar de sustituir las clases concretas.
-- `test/main.spec.ts` verifica el buffer de logs, la resolución por token, el arranque, el cierre y los errores de creación o apertura del puerto. `process.exit` se simula para comprobar el código 1 sin terminar Jest.
-- `test/app.config.module.spec.ts` comprueba que Loki exige una URL absoluta HTTP(S), rechaza valores ausentes, vacíos, relativos o de otro esquema, y permite omitir la URL en Log4js.
-- `test/modules/shared/interceptors/log.interceptor.spec.ts` observa los métodos de instancia de `Logger.prototype`, utilizados por el interceptor actual.
+### Escenarios destacados
 
-Resultado verificado el 23 de octubre de 2026 con `yarn test --runInBand --coverage`: **84 pruebas aprobadas en 10 suites**; cobertura de **99,53 % de sentencias**, **98,11 % de ramas**, **100 % de funciones** y **99,48 % de líneas**. La línea sin cubrir corresponde a la guardia redundante dentro de `Log4jsLoggerService.configure()`, que no se alcanza desde el flujo público normal después de configurar el servicio. Estos porcentajes describen esta ejecución, no una garantía para cambios posteriores.
+- `src/modules/shared/shared.module.spec.ts` comprueba la selección exclusiva del logger, su resolución mediante `LOGGER_SERVICE` y el rechazo de modos desconocidos.
+- `src/app.module.spec.ts` comprueba la composición de módulos y el mensaje de inicialización.
+- `src/main.spec.ts` verifica el buffer de logs, Swagger, validación global, resolución por token, arranque y cierre. Simula señales y `process.exit` para comprobar errores sin terminar Jest.
+- `src/app.config.spec.ts` comprueba getters, valores predeterminados, límites del puerto y validación de entornos, niveles y URL de Loki. `src/app.config.module.spec.ts` comprueba la configuración global y su validación.
+- `src/modules/shared/interceptors/log.interceptor.spec.ts` comprueba correlación, severidad, respuestas, excepciones, omisión del cuerpo y cancelación de suscripciones.
+- `src/modules/shared/services/lokiLogger.service.spec.ts` comprueba los nueve valores de `LOG_LEVEL`, el descarte sin serialización con `OFF`, payloads, salida en consola, errores y envíos concurrentes.
+- Las suites de controladores, DTO, errores y utilidades comprueban salud, conversión de errores HTTP, respuestas parciales, trazabilidad, IDs y combinación de esquemas Joi.
+
+La última ejecución verificada en esta actualización, el **1 de noviembre de 2026**, utilizó `pnpm.cmd test:cov --runInBand`: **148 pruebas aprobadas en 14 suites**. Cobertura global: **99,29 % de sentencias**, **98,82 % de ramas**, **98,41 % de funciones** y **99,22 % de líneas**. `LokiLoggerService` alcanza el **100 %** en las cuatro métricas.
+
+Quedan sin cubrir el log de `SharedModule.onModuleInit()` y el retorno de la guardia redundante dentro de `Log4jsLoggerService.configure()`. Los porcentajes describen esa ejecución y no garantizan resultados tras cambios posteriores.
+
+El script `pnpm test:e2e` apunta a `test/jest-e2e.json`, que no existe actualmente; requiere incorporar esa configuración y las pruebas correspondientes antes de utilizarlo.
 
 ### Hooks de Git
 
-`package.json` incluye `prepare: husky`. El hook `.husky/pre-commit` ejecuta `yarn test`. `.husky/commit-msg` ejecuta `yarn commitlint --edit "$1"`; `commitlint.config.cjs` extiende `@commitlint/config-conventional`. Los hooks deben estar instalados para que estas comprobaciones se ejecuten al crear un commit.
+`package.json` incluye `prepare: husky`. El hook `.husky/pre-commit` ejecuta `pnpm test:cov`. `.husky/commit-msg` ejecuta `pnpm exec commitlint --edit "$1"`; `commitlint.config.cjs` extiende `@commitlint/config-conventional`. Los hooks deben estar instalados para que estas comprobaciones se ejecuten al crear un commit.
 
 ## Consideraciones del código actual
 
 - El interceptor serializa cuerpos completos cuando `logData=true`; no contiene una función de ocultación de campos.
-- Loki no filtra por `LOG_LEVEL`, y la salida en consola espera a que finalice cada envío HTTP.
+- Loki filtra por `LOG_LEVEL` antes de enviar; para mensajes admitidos, la salida en consola espera a que finalice cada envío HTTP.
 - El cierre no espera explícitamente los envíos pendientes a Loki.
 - No se implementan módulos de negocio, persistencia ni autenticación en el árbol de `src` documentado.
