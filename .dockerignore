@@ -1,0 +1,15 @@
+node_modules
+dist
+coverage
+.git
+.husky
+.agents
+.codex
+.aws
+.env
+.env.*
+*.env
+logs
+*.log
+docs
+docker

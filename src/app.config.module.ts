@@ -2,9 +2,11 @@ import { Global, Logger, Module, OnModuleInit } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { AppConfig, appConfigSchema } from "./app.config";
 import { Utils } from "./modules/shared/utils/utils";
+import { authConfigSchema } from "./modules/auth/auth.config";
 
 const validationSchema = Utils.mergeConfigSchemas(
   appConfigSchema,
+  authConfigSchema
 );
 
 @Global()
