@@ -1,0 +1,1 @@
+export const AUTH_CONNECTION_NAME = 'auth_database';

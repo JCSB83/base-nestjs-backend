@@ -1,0 +1,24 @@
+import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { ProfileOptionEntity } from './profileOption.entity';
+
+@Entity({ name: 'auth_mae_profile' })
+export class ProfileEntity {
+  @PrimaryGeneratedColumn('uuid', { name: 'profile_id' })
+  profileId!: string;
+  @Column({ name: 'name', length: 50, nullable: false, unique: true })
+  name!: string;
+  @Column({ name: 'description', length: 100, nullable: true })
+  description?: string;
+  @Column({ name: 'is_internal', type: 'boolean', nullable: false })
+  isInternal!: boolean;
+  @Column({ name: 'is_active', type: 'boolean', nullable: false })
+  isActive!: boolean;
+  @Column({ name: 'created_at', type: 'timestamptz', nullable: false })
+  createdAt!: Date;
+  @Column({ name: 'updated_at', type: 'timestamptz', nullable: true })
+  updatedAt?: Date;
+  @Column({ name: 'protected', type: 'boolean', nullable: false })
+  protected!: boolean;
+  @OneToMany(() => ProfileOptionEntity, o => o.profile)
+  profileOptions?: ProfileOptionEntity[];
+}
