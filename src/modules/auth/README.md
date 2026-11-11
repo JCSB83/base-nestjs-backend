@@ -136,19 +136,30 @@ permite continuar.
 
 ## Configuración
 
+El archivo `.env` se ubica en la raíz de `base-nestjs-backend`; usa
+[`.env.example`](../../../.env.example) como referencia. `AppConfigModule`
+carga la configuración y valida conjuntamente los esquemas de App y Auth
+antes de iniciar la aplicación.
+
+Las variables de PostgreSQL ahora usan el prefijo **`AUTH_DATABASE_`**.
+Si migras un `.env` anterior, renombra las claves `DATABASE_*` a
+`AUTH_DATABASE_*` según la tabla: los nombres anteriores ya no se consultan
+ni sustituyen las claves obligatorias. Las variables `JWT_*` conservan sus
+nombres. Se mantiene la escritura `SYNCRONIZE` utilizada en el código.
+
 Todas las variables siguientes son obligatorias en `authConfigSchema`:
 
 | Variable                    | Tipo / unidad             | Uso                                                                            |
 | --------------------------- | ------------------------- | ------------------------------------------------------------------------------ |
-| `DATABASE_HOST`             | Texto                     | Host de PostgreSQL.                                                            |
-| `DATABASE_PORT`             | Número                    | Puerto de PostgreSQL.                                                          |
-| `DATABASE_USERNAME`         | Texto                     | Usuario de conexión.                                                           |
-| `DATABASE_PASSWORD`         | Texto                     | Contraseña de conexión.                                                        |
-| `DATABASE_NAME`             | Texto                     | Base de datos existente.                                                       |
-| `DATABASE_SYNCRONIZE`       | Booleano                  | Sincronización automática de entidades. El nombre se escribe así en el código. |
-| `DATABASE_LOGGING`          | Booleano                  | Logging de TypeORM.                                                            |
-| `DATABASE_MIGRATIONSRUN`    | Booleano                  | Ejecutar las migraciones descubiertas al iniciar.                              |
-| `DATABASE_MAXEXECUTIONTIME` | Número, milisegundos      | Umbral de consultas lentas de TypeORM.                                         |
+| `AUTH_DATABASE_HOST`             | Texto                     | Host de PostgreSQL.                                                            |
+| `AUTH_DATABASE_PORT`             | Número                    | Puerto de PostgreSQL.                                                          |
+| `AUTH_DATABASE_USERNAME`         | Texto                     | Usuario de conexión.                                                           |
+| `AUTH_DATABASE_PASSWORD`         | Texto                     | Contraseña de conexión.                                                        |
+| `AUTH_DATABASE_NAME`             | Texto                     | Base de datos existente.                                                       |
+| `AUTH_DATABASE_SYNCRONIZE`       | Booleano                  | Sincronización automática de entidades. El nombre se escribe así en el código. |
+| `AUTH_DATABASE_LOGGING`          | Booleano                  | Logging de TypeORM.                                                            |
+| `AUTH_DATABASE_MIGRATIONSRUN`    | Booleano                  | Ejecutar las migraciones descubiertas al iniciar.                              |
+| `AUTH_DATABASE_MAXEXECUTIONTIME` | Número, milisegundos      | Umbral de consultas lentas de TypeORM.                                         |
 | `JWT_SECRET`                | Texto                     | Secreto de firma y verificación del access token.                              |
 | `JWT_EXPIRESIN`             | Entero positivo, segundos | Duración del access token.                                                     |
 | `JWT_REFRESH_SECRET`        | Texto                     | Secreto de firma y verificación del refresh token.                             |
@@ -160,18 +171,23 @@ migraciones habilitadas para preparar el esquema al iniciar:
 ```dotenv
 PORT=3210
 ENVIRONMENT=LOCAL
+APP_NAME=base-nestjs-backend
+APP_DESCRIPTION="API base con autenticación JWT"
+APP_VERSION=1.0.0
 LOG_MODE=log4js
 LOG_LEVEL=INFO
+LOG_DIR=./logs
+LOG_NAME=base-nestjs-backend
 
-DATABASE_HOST=localhost
-DATABASE_PORT=5432
-DATABASE_USERNAME=auth_user
-DATABASE_PASSWORD=reemplazar_por_la_clave_de_postgres
-DATABASE_NAME=auth_db
-DATABASE_SYNCRONIZE=false
-DATABASE_LOGGING=false
-DATABASE_MIGRATIONSRUN=true
-DATABASE_MAXEXECUTIONTIME=30000
+AUTH_DATABASE_HOST=localhost
+AUTH_DATABASE_PORT=5432
+AUTH_DATABASE_USERNAME=auth_user
+AUTH_DATABASE_PASSWORD=reemplazar_por_la_clave_de_postgres
+AUTH_DATABASE_NAME=auth_db
+AUTH_DATABASE_SYNCRONIZE=false
+AUTH_DATABASE_LOGGING=false
+AUTH_DATABASE_MIGRATIONSRUN=true
+AUTH_DATABASE_MAXEXECUTIONTIME=30000
 
 JWT_SECRET=reemplazar_por_un_secreto_de_acceso
 JWT_EXPIRESIN=900
@@ -179,14 +195,30 @@ JWT_REFRESH_SECRET=reemplazar_por_otro_secreto_de_renovacion
 JWT_REFRESH_EXPIRESIN=3600
 ```
 
-`PORT`, `ENVIRONMENT`, `LOG_MODE` y `LOG_LEVEL` pertenecen a la configuración
-general de la aplicación, no a Auth. Si eliges `LOG_MODE=loki`, también necesitas
-`LOKI_URL`. Usa una sola asignación de `LOG_MODE` en el archivo.
+### Variables generales de la aplicación
+
+Estas variables pertenecen a `appConfigSchema`, no a Auth:
+
+| Variable | Requisito o valor predeterminado | Uso |
+| --- | --- | --- |
+| `PORT` | Obligatoria; puerto válido. | Puerto HTTP. |
+| `ENVIRONMENT` | Obligatoria: `LOCAL`, `DEV`, `QA` o `PROD`. | Entorno de ejecución. |
+| `APP_NAME` | `base-nestjs-backend` si se omite. | Nombre de la aplicación y título de Swagger. |
+| `APP_DESCRIPTION` | Cadena vacía si se omite. | Descripción de Swagger. |
+| `APP_VERSION` | `1.0.0` si se omite. | Versión publicada en Swagger. |
+| `LOG_MODE` | Obligatoria: `log4js` o `loki`. | Proveedor de logging. |
+| `LOG_LEVEL` | Obligatoria: `ALL`, `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`, `MARK` u `OFF`. | Nivel de logging. |
+| `LOG_DIR` | Con `log4js`, `./logs` si se omite. | Directorio de logs. |
+| `LOG_NAME` | Con `log4js`, `base-nestjs-backend` si se omite. | Nombre de los logs. |
+| `LOKI_URL` | Obligatoria con `LOG_MODE=loki`; URL absoluta HTTP o HTTPS. | Endpoint de Loki. |
+
+Usa una sola asignación de `LOG_MODE` en el archivo. Con `log4js` puedes omitir
+`LOKI_URL`; con `loki`, `LOG_DIR` y `LOG_NAME` son opcionales.
 
 La conexión se llama **`auth_database`**, según `AUTH_CONNECTION_NAME`.
-Aunque existe el getter `databaseConnectionName` y el ejemplo general incluye
-`DATABASE_CONNECTIONNAME`, esa variable no se usa para nombrar la conexión ni
-es obligatoria en `authConfigSchema`.
+El nombre es una constante del módulo: no se configura desde `.env`.
+`AuthConfig` ya no incluye el getter `databaseConnectionName` y no utiliza
+`DATABASE_CONNECTIONNAME` ni `AUTH_DATABASE_CONNECTIONNAME`.
 
 ### Base de datos y migraciones
 
@@ -206,17 +238,17 @@ entities: [
 ],
 ```
 
-Con `DATABASE_MIGRATIONSRUN=true`, TypeORM ejecuta las migraciones pendientes
+Con `AUTH_DATABASE_MIGRATIONSRUN=true`, TypeORM ejecuta las migraciones pendientes
 al inicializar la conexión. La base de datos debe existir y el usuario de
 conexión debe tener permisos para aplicar los cambios de esquema y datos.
 Si las migraciones se ejecutan por un proceso externo, utiliza
-`DATABASE_MIGRATIONSRUN=false`. El ejemplo mantiene `DATABASE_SYNCRONIZE=false`
+`AUTH_DATABASE_MIGRATIONSRUN=false`. El ejemplo mantiene `AUTH_DATABASE_SYNCRONIZE=false`
 para gestionar el esquema mediante migraciones.
 
 El módulo también registra explícitamente sus seis entidades con `forFeature`
 y `autoLoadEntities: true`.
 Si utilizas un DataSource independiente, debes registrar las entidades allí.
-El proyecto no incluye actualmente un comando Yarn específico para migraciones.
+El proyecto no incluye actualmente un script específico para migraciones.
 
 La migración de datos crea diez permisos, un perfil `admin` y el usuario
 `admin@base.com` con contraseña inicial `password123` almacenada como hash.
@@ -226,8 +258,10 @@ carga de datos iniciales.
 
 ## API HTTP
 
-Prefijo: `/api/v1/auth`. Swagger está disponible en `/swagger` y tiene soporte
-Bearer mediante `DocumentBuilder.addBearerAuth()`.
+Prefijo: `/api/v1/auth`. Swagger está disponible en `/swagger`. Los controladores
+protegidos declaran `@ApiBearerAuth()` y `main.ts` registra el esquema con
+`DocumentBuilder.addBearerAuth()`, por lo que Swagger UI permite autorizar
+las solicitudes con un access token.
 
 | Método | Ruta                   | Autenticación              | Resultado exitoso                           |
 | ------ | ---------------------- | -------------------------- | ------------------------------------------- |
@@ -259,6 +293,57 @@ Las respuestas 204 no tienen cuerpo. Los DTO rechazan campos adicionales con
 el `ValidationPipe` global. Login limita el correo a 320 caracteres y la
 contraseña a 64; ambos deben ser strings no vacíos. No incluye `IsEmail`.
 
+### Ejemplo de uso en PowerShell
+
+Con el backend iniciado en el puerto del ejemplo de configuración, ejecuta
+este flujo con las credenciales de un usuario existente:
+
+```powershell
+$authUrl = 'http://localhost:3210/api/v1/auth'
+$credentials = Get-Credential -Message 'Credenciales del usuario de Auth'
+$loginBody = @{
+    email = $credentials.UserName
+    password = $credentials.GetNetworkCredential().Password
+} | ConvertTo-Json
+
+$login = Invoke-RestMethod -Method Post -Uri "$authUrl/login" -ContentType 'application/json' -Body $loginBody
+$tokens = $login.data
+$headers = @{ Authorization = "Bearer $($tokens.accessToken)" }
+
+$me = Invoke-RestMethod -Method Get -Uri "$authUrl/me" -Headers $headers
+$me.data
+
+$sessions = Invoke-RestMethod -Method Get -Uri "$authUrl/sessions" -Headers $headers
+$sessions.data
+
+$refreshBody = @{ token = $tokens.refreshToken } | ConvertTo-Json
+$refresh = Invoke-RestMethod -Method Post -Uri "$authUrl/refresh" -ContentType 'application/json' -Body $refreshBody
+$tokens = $refresh.data
+$headers = @{ Authorization = "Bearer $($tokens.accessToken)" }
+
+Invoke-RestMethod -Method Post -Uri "$authUrl/logout" -Headers $headers
+```
+
+Después de renovar, reemplaza **ambos tokens** y actualiza el encabezado Bearer.
+La renovación crea un nuevo `jti` y una nueva sesión; el par anterior deja de
+ser utilizable una vez completado el reemplazo de sus registros.
+
+### Sesiones y expiración
+
+`GET /sessions` devuelve en `data` un arreglo con `sessionId`, `userId`, `jti`
+y `expiresAt` (fecha serializada en formato ISO 8601). La consulta filtra por
+usuario, pero no por fecha de expiración; puede incluir registros vencidos
+hasta que los elimine la tarea de limpieza.
+
+La sesión expira con el access token. El refresh token tiene su propia
+expiración y su propio registro: puede renovar el acceso aunque la sesión
+anterior ya haya sido eliminada por la limpieza, siempre que el refresh token
+siga siendo válido, exista su registro y el usuario esté activo.
+
+`POST /logout` elimina la sesión actual y su refresh token;
+`POST /logout-all` elimina los registros de todas las sesiones y refresh tokens
+del usuario. Ambos endpoints requieren un access token válido.
+
 ### Comportamientos actuales a considerar
 
 - El guard responde 401 si falta autenticación válida y 500 ante errores
@@ -269,22 +354,25 @@ contraseña a 64; ambos deben ser strings no vacíos. No incluye `IsEmail`.
 - La revocación por `sessionId` requiere autenticación, pero el flujo actual
   no comprueba que la sesión pertenezca al usuario solicitante. No debe
   interpretarse como una comprobación de propiedad de la sesión.
+- Si el identificador tiene un formato válido pero la sesión ya no existe,
+  la revocación termina con 204. `sessionId` no tiene un pipe de validación
+  UUID; un valor mal formado puede provocar un error de persistencia y un 500.
 
 ## Ejecución y pruebas
 
-Desde la raíz del repositorio, con las dependencias instaladas y PostgreSQL
+Desde la raíz de `base-nestjs-backend`, con las dependencias instaladas y PostgreSQL
 configurado:
 
 ```sh
-yarn start:dev
+pnpm run start:dev
 ```
 
 Las pruebas unitarias usan mocks y no requieren PostgreSQL:
 
 ```sh
-yarn test --runInBand --testPathPatterns=src/modules/auth
-yarn test:cov --runInBand --testPathPatterns=src/modules/auth --collectCoverageFrom=src/modules/auth/**/*.ts --coverageDirectory=coverage/auth
+pnpm run test --runInBand --testPathPatterns=src/modules/auth
+pnpm run test:cov --runInBand --testPathPatterns=src/modules/auth --collectCoverageFrom="src/modules/auth/**/*.ts" --coverageDirectory=coverage/auth
 ```
 
-En PowerShell puedes usar `yarn.cmd` si la política de ejecución bloquea
-`yarn.ps1`. Consulta también el [reporte de cobertura](../../../docs/auth-test-coverage.md).
+En PowerShell puedes usar `pnpm.cmd` si la política de ejecución bloquea
+`pnpm.ps1`. El comando de cobertura genera el reporte en `coverage/auth`.

@@ -12,7 +12,8 @@ function configureSwagger(app: INestApplication<any>, appConfig: AppConfig) {
         .setTitle(appConfig.appName)
         .setDescription(appConfig.appDescription)
         .setVersion(appConfig.appVersion)
-        .build();        
+        .addBearerAuth()
+        .build();
     const document = SwaggerModule.createDocument(app, documentBuilder);
     SwaggerModule.setup('swagger', app, document);
 }
