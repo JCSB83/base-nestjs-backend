@@ -2,7 +2,9 @@
 
 Revisada el **17 de noviembre de 2026** a partir del código actual. La aplicación ofrece una base HTTP con NestJS, configuración validada, Swagger, salud, métricas Prometheus y logs mediante Log4js o Loki.
 
-Para instalar y ejecutar el proyecto, consulta el [README](../README.md). La implementación actual no incluye autenticación, persistencia, migraciones ni tareas programadas. Las dependencias de JWT y TypeORM presentes en el manifiesto no están conectadas a módulos de negocio.
+Para instalar y ejecutar el proyecto, consulta el [README](../README.md). La implementación actual no incluye autenticación, persistencia, migraciones ni tareas programadas. El manifiesto conserva `@nestjs/typeorm`, pero no registra conexiones ni repositorios de base de datos.
+
+Las dependencias declaradas en [package.json](../package.json) incluyen NestJS 12, Express 5, `@prometheus-io/client` 0.16, TypeScript 6 y Jest 30. Las versiones resueltas se fijan en el lockfile de pnpm.
 
 ## Arquitectura y responsabilidades
 
@@ -29,6 +31,8 @@ Para instalar y ejecutar el proyecto, consulta el [README](../README.md). La imp
 
 Las declaraciones de Express solo describen tipos: no asignan valores ni implementan autenticación. Las pruebas se encuentran junto a cada archivo en `*.spec.ts`.
 
+El alias `@/*` apunta a `src/*` en [tsconfig.json](../tsconfig.json). Jest configura esa misma correspondencia en [jest.config.ts](../jest.config.ts), junto con `src/*` y una regla para imports relativos terminados en `.js`.
+
 ## Arranque y cierre
 
 `bootstrap()` se ejecuta al cargar `main.ts`:
@@ -46,6 +50,8 @@ El pipe utiliza `whitelist: true`, `forbidNonWhitelisted: true` y `transform: tr
 Los errores que llegan al bloque `catch` del arranque se registran como `Error starting the application:` y provocan `process.exit(1)`.
 
 Los módulos AppModule, AppConfigModule, HealthModule, MetricsModule y SharedModule registran su inicialización mediante `onModuleInit()`.
+
+El arranque actual no registra ObserveModule ni pasa ObserveInstrument a NestFactory; la instrumentación HTTP propia reside en MetricsMiddleware y LogRequestInterceptor.
 
 ### Selección del logger
 
@@ -130,7 +136,7 @@ Si falla, registra el mensaje `Error al intentar obtener metricas`, junto con me
 
 ### Registro y servicio
 
-MetricsService crea un `client.Registry` propio y llama a `collectDefaultMetrics({ register })`. Expone el contenido mediante `getMetrics()` y su tipo MIME mediante `getContentType()`.
+MetricsService importa `@prometheus-io/client`, crea un `client.Registry` propio y llama a `collectDefaultMetrics({ register })`. Expone el contenido mediante `getMetrics()` y su tipo MIME mediante `getContentType()`. Los mapas de métricas utilizan `Counter<string>` e `Histogram<string>` para sus etiquetas.
 
 | Método                                            | Comportamiento                                                                                  |
 | ------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
@@ -290,28 +296,44 @@ pnpm exec eslint "src/**/*.spec.ts"
 
 En PowerShell puedes utilizar pnpm.cmd si la política de ejecución bloquea pnpm.ps1. Para ejecutar las suites en un único proceso, agrega `--runInBand` a los comandos de Jest.
 
-Jest busca pruebas en src o test, resuelve imports `src/*` y transforma TypeScript con ts-jest y [tsconfig.spec.json](../tsconfig.spec.json). [tsconfig.build.json](../tsconfig.build.json) excluye los archivos de pruebas de la compilación de producción.
+La configuración de Jest está en [jest.config.ts](../jest.config.ts), separada de package.json. Busca pruebas en src o test, resuelve imports `src/*` y `@/*`, y transforma TypeScript con ts-jest y [tsconfig.spec.json](../tsconfig.spec.json). Este último utiliza CommonJS para las pruebas. [tsconfig.build.json](../tsconfig.build.json) excluye los archivos de pruebas de la compilación de producción.
 
-El script test:e2e apunta a test/jest-e2e.json, que no existe. El manifiesto incluye prepare: husky, pero el árbol actual no contiene hooks de proyecto en .husky. Tampoco incluye Dockerfile ni Docker Compose.
+Los scripts de pruebas ejecutan Jest mediante `node --experimental-vm-modules`. Node puede emitir una advertencia de funcionalidad experimental; en la ejecución verificada esa advertencia no impide que las pruebas pasen.
+
+La comprobación independiente con `tsc --project tsconfig.spec.json --noEmit --incremental false` falla actualmente con TS5107: `moduleResolution: node` corresponde a la resolución obsoleta node10 en TypeScript 6. Las pruebas de Jest pasan, pero esto no equivale a una comprobación global de tipos satisfactoria. La configuración debe migrarse; esta actualización documental no modifica tsconfig.
+
+El script test:e2e apunta a test/jest-e2e.json, que no existe. Tampoco se incluyen Dockerfile ni Docker Compose.
+
+### Hooks de Git
+
+El manifiesto incluye `prepare: husky`. El hook [pre-commit](../.husky/pre-commit) ejecuta `pnpm test` y [commit-msg](../.husky/commit-msg) ejecuta `pnpm exec commitlint --edit "$1"`, con la configuración de [commitlint.config.cjs](../commitlint.config.cjs). El hook de pre-commit ejecuta las pruebas sin solicitar cobertura; para comprobar los umbrales utiliza `pnpm test:cov`.
 
 ### Alcance y resultados de las pruebas
 
-La última ejecución verificada, el **17 de noviembre de 2026**, aprobó **115 pruebas en 19 suites**, con **0 fallos**.
+La ejecución de `pnpm.cmd test:cov --runInBand`, verificada al actualizar este documento el **17 de noviembre de 2026**, aprobó **115 pruebas en 19 suites**, con **0 fallos**.
 
 | Métrica    | Cobertura |
 | ---------- | --------- |
 | Sentencias | 99,73 %   |
 | Ramas      | 97,11 %   |
 | Funciones  | 100 %     |
-| Líneas     | 99,70 %   |
+| Líneas     | 99,71 %   |
 
 Los umbrales globales de Jest se mantienen en 80 %. La cobertura considera archivos TypeScript de src y excluye declaraciones .d.ts y enums .enum.ts. El informe HTML se genera en coverage/lcov-report/index.html.
 
-Las suites verifican controladores, configuración, servicios, middleware, interceptor, errores, utilidades, selección del logger y ciclo de vida. Simulan Axios, Log4js, prom-client, Swagger, Terminus y la aplicación de arranque donde corresponde. No abren servidores ni realizan conexiones remotas o escrituras reales de logs.
+Las suites verifican controladores, configuración, servicios, middleware, interceptor, errores, utilidades, selección del logger y ciclo de vida. Simulan Axios, Log4js, `@prometheus-io/client`, Swagger, Terminus y la aplicación de arranque donde corresponde. No abren servidores ni realizan conexiones remotas o escrituras reales de logs.
+
+### Aislamiento de dependencias en las pruebas
+
+- `app.config.spec.ts` conserva la clase AppConfig y el esquema Joi reales. Simula únicamente ConfigService de `@nestjs/config` y proporciona un mock de getOrThrow para comprobar los getters y la propagación de errores. Sus 24 casos verifican también valores predeterminados, requisitos y límites de configuración.
+- Las suites de los loggers, HealthController, MetricsMiddleware, MetricsModule y SharedModule simulan `@/app.config`. Esto evita cargar indirectamente `@nestjs/config` mientras se prueba el comportamiento de cada unidad con valores de configuración controlados.
+- Estos mocks evitan el error `ReferenceError: exports is not defined` observado al cargar la dependencia ESM con la configuración actual de Jest. No verifican la integración real con ConfigService.
+- `metrics.service.spec.ts` simula el mismo paquete que importa producción: `@prometheus-io/client`. Los mocks de Counter e Histogram especifican el genérico `<string>` para coincidir con los tipos de etiquetas del servicio.
+- `lokiLogger.service.spec.ts` simula Axios y la consola, fija el reloj y espera la cadena de promesas antes de comprobar los efectos del envío. Sus 15 casos cubren niveles, serialización y errores HTTP sin contactar con Loki.
 
 No quedan métodos completos sin cobertura. Permanecen las alternativas defensivas de los mapas de etiquetas en MetricsService y el retorno de configure cuando Log4js ya está configurado, que el constructor evita alcanzar.
 
-Consulta el [informe de resultados](unit-test-results.md) para el inventario y las limitaciones. Estos resultados corresponden a la ejecución previa verificada; esta actualización documental no vuelve a ejecutar la suite. El archivo unit-test-audit.md corresponde a una versión anterior del proyecto.
+Consulta el [informe de resultados](unit-test-results.md) para el inventario original y las limitaciones. Ese informe conserva las dependencias, líneas y resultados de la primera generación de pruebas; la ejecución y los ajustes descritos aquí reflejan el estado actualizado. El archivo unit-test-audit.md corresponde a una versión anterior del proyecto.
 
 ## Límites actuales
 
