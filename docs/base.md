@@ -302,7 +302,17 @@ Los scripts de pruebas ejecutan Jest mediante `node --experimental-vm-modules`. 
 
 La comprobación independiente con `tsc --project tsconfig.spec.json --noEmit --incremental false` falla actualmente con TS5107: `moduleResolution: node` corresponde a la resolución obsoleta node10 en TypeScript 6. Las pruebas de Jest pasan, pero esto no equivale a una comprobación global de tipos satisfactoria. La configuración debe migrarse; esta actualización documental no modifica tsconfig.
 
-El script test:e2e apunta a test/jest-e2e.json, que no existe. Tampoco se incluyen Dockerfile ni Docker Compose.
+El script test:e2e apunta a test/jest-e2e.json, que no existe.
+
+### Imagen Docker
+
+El [Dockerfile](../Dockerfile) utiliza Node.js 26 sobre Debian Bookworm slim y pnpm 12.15.0. Instala con `--frozen-lockfile`, compila mediante `pnpm build` y elimina las dependencias de desarrollo antes de copiarlas a la etapa final. Husky está desactivado durante la instalación; el proceso de poda no ejecuta scripts de ciclo de vida.
+
+La imagen final contiene package.json, node_modules y dist. Arranca directamente con `node dist/main.js` como usuario `node`, recibe SIGTERM para el cierre y comprueba `/health/live` cada 30 segundos. El directorio `/app/logs` pertenece al usuario de la aplicación.
+
+[.dockerignore](../.dockerignore) excluye dependencias locales, compilaciones, pruebas, logs, archivos `.env` y metadatos del contexto. La configuración se proporciona al ejecutar el contenedor. Los valores predeterminados son PORT=3210, ENVIRONMENT=PROD, LOG_MODE=log4js, LOG_LEVEL=INFO y LOG_DIR=/app/logs.
+
+Consulta los comandos de construcción y ejecución en el [README](../README.md#docker). No se incluye Docker Compose.
 
 ### Hooks de Git
 

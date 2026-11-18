@@ -131,7 +131,20 @@ pnpm build
 pnpm start:prod
 ```
 
-Si seleccionas Loki, proporciona su URL y disponibilidad. El repositorio actual no incluye `Dockerfile` ni Docker Compose.
+Si seleccionas Loki, proporciona su URL y disponibilidad.
+
+### Docker
+
+El [Dockerfile](Dockerfile) compila en una etapa separada y ejecuta la aplicación con Node.js 26 como usuario `node`, con dependencias de producción. Utiliza pnpm 12.15.0 y el lockfile existente. No incorpora archivos `.env` a la imagen.
+
+```bash
+docker build -t base-nestjs-backend:local .
+docker run --rm --name base-nestjs-backend -p 3210:3210 base-nestjs-backend:local
+```
+
+La imagen usa por defecto `PORT=3210`, `ENVIRONMENT=PROD`, `LOG_MODE=log4js`, `LOG_LEVEL=INFO` y `LOG_DIR=/app/logs`. Comprueba `/health/live` para determinar su estado de salud. Puedes sobrescribir variables con `-e` o `--env-file .env`; si cambias `PORT`, ajusta también el puerto interno de `-p`.
+
+Para conservar los archivos de log, añade `--mount source=backend-logs,target=/app/logs` a `docker run`. Si utilizas Loki, configura una URL accesible desde el contenedor: `127.0.0.1` identifica al propio contenedor. No se incluye Docker Compose.
 
 ## Pruebas y cobertura
 
