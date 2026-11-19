@@ -1,6 +1,6 @@
-﻿# Base NestJS Backend: documentación técnica
+# Base NestJS Backend: documentación técnica
 
-Revisada el **17 de noviembre de 2026** a partir del código actual. La aplicación ofrece una base HTTP con NestJS, configuración validada, Swagger, salud, métricas Prometheus y logs mediante Log4js o Loki.
+Revisada el **19 de noviembre de 2026** a partir del código actual. La aplicación ofrece una base HTTP con NestJS, configuración validada, Swagger, salud, métricas Prometheus y logs mediante Log4js o Loki.
 
 Para instalar y ejecutar el proyecto, consulta el [README](../README.md). La implementación actual no incluye autenticación, persistencia, migraciones ni tareas programadas. El manifiesto conserva `@nestjs/typeorm`, pero no registra conexiones ni repositorios de base de datos.
 
@@ -8,28 +8,51 @@ Las dependencias declaradas en [package.json](../package.json) incluyen NestJS 1
 
 ## Arquitectura y responsabilidades
 
+La configuración y el arranque permanecen en la raíz de `src`; los módulos funcionales y los componentes compartidos se agrupan en `src/modules`:
+
+```text
+src/
+├── main.ts
+├── app.module.ts
+├── app.config.ts
+├── app.config.module.ts
+├── @types/express/index.d.ts
+└── modules/
+    ├── health/
+    ├── metrics/
+    └── shared/
+        ├── controllers/
+        ├── dto/
+        ├── errors/
+        ├── interceptors/
+        ├── services/
+        └── utils/
+```
+
+AppModule importa los módulos desde `./modules`; main.ts obtiene el token del logger y el interceptor desde `./modules/shared`, y AppConfigModule importa Utils desde esa misma ubicación. La reorganización conserva los endpoints y el comportamiento de los módulos.
+
 | Archivo                                                                             | Responsabilidad                                                                        |
 | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | [main.ts](../src/main.ts)                                                           | Arranque, Swagger, logger, validación global, interceptor y cierre por señales.        |
 | [app.module.ts](../src/app.module.ts)                                               | Importa AppConfigModule, HealthModule, MetricsModule y SharedModule.                   |
 | [app.config.module.ts](../src/app.config.module.ts)                                 | Carga y valida el entorno; exporta AppConfig globalmente.                              |
 | [app.config.ts](../src/app.config.ts)                                               | Getters sobre ConfigService y esquema Joi.                                             |
-| [health.module.ts](../src/health/health.module.ts)                                  | Importa TerminusModule y registra HealthController.                                    |
-| [health.controller.ts](../src/health/health.controller.ts)                          | Comprobaciones de vida y disponibilidad.                                               |
-| [metrics.module.ts](../src/metrics/metrics.module.ts)                               | Registra servicio, controlador y middleware; excluye GET /metrics de la medición HTTP. |
-| [metrics.service.ts](../src/metrics/metrics.service.ts)                             | Registro Prometheus, contadores e histogramas.                                         |
-| [metrics.middleware.ts](../src/metrics/metrics.middleware.ts)                       | Mide solicitudes terminadas y abortadas.                                               |
-| [metrics.controller.ts](../src/metrics/metrics.controller.ts)                       | Expone las métricas como texto.                                                        |
-| [shared.module.ts](../src/shared/shared.module.ts)                                  | Selecciona el logger y exporta LOGGER_SERVICE y LogRequestInterceptor.                 |
-| [log-request.interceptor.ts](../src/shared/interceptors/log-request.interceptor.ts) | Registra ruta, respuesta, estado y duración.                                           |
-| [log4jsLogger.service.ts](../src/shared/services/log4jsLogger.service.ts)           | Logs a consola y archivos rotativos.                                                   |
-| [lokiLogger.service.ts](../src/shared/services/lokiLogger.service.ts)               | Filtrado de niveles, envío HTTP a Loki y salida en consola.                            |
-| [common.controller.ts](../src/shared/controllers/common.controller.ts)              | Convierte errores en HttpException con ResponseDto.                                    |
-| [response.dto.ts](../src/shared/dto/response.dto.ts)                                | Inicializa una respuesta común a partir de propiedades parciales.                      |
-| [utils.ts](../src/shared/utils/utils.ts)                                            | Genera identificadores y combina esquemas Joi.                                         |
+| [health.module.ts](../src/modules/health/health.module.ts)                                  | Importa TerminusModule y registra HealthController.                                    |
+| [health.controller.ts](../src/modules/health/health.controller.ts)                          | Comprobaciones de vida y disponibilidad.                                               |
+| [metrics.module.ts](../src/modules/metrics/metrics.module.ts)                               | Registra servicio, controlador y middleware; excluye GET /metrics de la medición HTTP. |
+| [metrics.service.ts](../src/modules/metrics/metrics.service.ts)                             | Registro Prometheus, contadores e histogramas.                                         |
+| [metrics.middleware.ts](../src/modules/metrics/metrics.middleware.ts)                       | Mide solicitudes terminadas y abortadas.                                               |
+| [metrics.controller.ts](../src/modules/metrics/metrics.controller.ts)                       | Expone las métricas como texto.                                                        |
+| [shared.module.ts](../src/modules/shared/shared.module.ts)                                  | Selecciona el logger y exporta LOGGER_SERVICE y LogRequestInterceptor.                 |
+| [log-request.interceptor.ts](../src/modules/shared/interceptors/log-request.interceptor.ts) | Registra ruta, respuesta, estado y duración.                                           |
+| [log4jsLogger.service.ts](../src/modules/shared/services/log4jsLogger.service.ts)           | Logs a consola y archivos rotativos.                                                   |
+| [lokiLogger.service.ts](../src/modules/shared/services/lokiLogger.service.ts)               | Filtrado de niveles, envío HTTP a Loki y salida en consola.                            |
+| [common.controller.ts](../src/modules/shared/controllers/common.controller.ts)              | Convierte errores en HttpException con ResponseDto.                                    |
+| [response.dto.ts](../src/modules/shared/dto/response.dto.ts)                                | Inicializa una respuesta común a partir de propiedades parciales.                      |
+| [utils.ts](../src/modules/shared/utils/utils.ts)                                            | Genera identificadores y combina esquemas Joi.                                         |
 | [Declaraciones Express](../src/@types/express/index.d.ts)                           | Extiende Request con logId, logData, userId, user y sessionId.                         |
 
-Las declaraciones de Express solo describen tipos: no asignan valores ni implementan autenticación. Las pruebas se encuentran junto a cada archivo en `*.spec.ts`.
+Las declaraciones de Express solo describen tipos: no asignan valores ni implementan autenticación. Las pruebas se encuentran junto a cada archivo en `*.spec.ts`, incluidas las de los módulos bajo `src/modules`. Los mocks de AppModule y main.ts utilizan las nuevas rutas `./modules/...`.
 
 El alias `@/*` apunta a `src/*` en [tsconfig.json](../tsconfig.json). Jest configura esa misma correspondencia en [jest.config.ts](../jest.config.ts), junto con `src/*` y una regla para imports relativos terminados en `.js`.
 
@@ -268,7 +291,7 @@ CommonController.getHttpException transforma errores de esta manera:
 
 El mensaje fijo `login failed` es el comportamiento actual y está documentado por las pruebas; no corresponde a un endpoint de login existente.
 
-[UseCaseError](../src/shared/errors/usecase.error.ts) y [RepositoryError](../src/shared/errors/repository.error.ts) extienden Error, conservan una causa opcional en innerError y registran el mensaje con Logger.error. UseCaseError utiliza por defecto el nivel Unknown.
+[UseCaseError](../src/modules/shared/errors/usecase.error.ts) y [RepositoryError](../src/modules/shared/errors/repository.error.ts) extienden Error, conservan una causa opcional en innerError y registran el mensaje con Logger.error. UseCaseError utiliza por defecto el nivel Unknown.
 
 ### Utils
 
@@ -320,7 +343,9 @@ El manifiesto incluye `prepare: husky`. El hook [pre-commit](../.husky/pre-commi
 
 ### Alcance y resultados de las pruebas
 
-La ejecución de `pnpm.cmd test:cov --runInBand`, verificada al actualizar este documento el **17 de noviembre de 2026**, aprobó **115 pruebas en 19 suites**, con **0 fallos**.
+La última ejecución documentada de `pnpm.cmd test:cov --runInBand`, del **17 de noviembre de 2026**, aprobó **115 pruebas en 19 suites**, con **0 fallos**.
+
+Estos resultados son históricos: no se volvió a ejecutar la cobertura durante la revisión documental del **19 de noviembre de 2026**, posterior al traslado de los módulos a `src/modules`.
 
 | Métrica    | Cobertura |
 | ---------- | --------- |
@@ -341,9 +366,9 @@ Las suites verifican controladores, configuración, servicios, middleware, inter
 - `metrics.service.spec.ts` simula el mismo paquete que importa producción: `@prometheus-io/client`. Los mocks de Counter e Histogram especifican el genérico `<string>` para coincidir con los tipos de etiquetas del servicio.
 - `lokiLogger.service.spec.ts` simula Axios y la consola, fija el reloj y espera la cadena de promesas antes de comprobar los efectos del envío. Sus 15 casos cubren niveles, serialización y errores HTTP sin contactar con Loki.
 
-No quedan métodos completos sin cobertura. Permanecen las alternativas defensivas de los mapas de etiquetas en MetricsService y el retorno de configure cuando Log4js ya está configurado, que el constructor evita alcanzar.
+En la ejecución documentada no quedaron métodos completos sin cobertura. Permanecen las alternativas defensivas de los mapas de etiquetas en MetricsService y el retorno de configure cuando Log4js ya está configurado, que el constructor evita alcanzar.
 
-Consulta el [informe de resultados](unit-test-results.md) para el inventario original y las limitaciones. Ese informe conserva las dependencias, líneas y resultados de la primera generación de pruebas; la ejecución y los ajustes descritos aquí reflejan el estado actualizado. El archivo unit-test-audit.md corresponde a una versión anterior del proyecto.
+Consulta el [informe de resultados](unit-test-results.md) para el inventario original y las limitaciones. Ese informe conserva las dependencias, líneas y resultados de la primera generación de pruebas; los resultados de cobertura descritos aquí corresponden a la ejecución del 17 de noviembre de 2026. El archivo unit-test-audit.md corresponde a una versión anterior del proyecto.
 
 ## Límites actuales
 

@@ -3,22 +3,22 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppConfig } from './app.config';
 import { AppModule } from './app.module';
-import { LOGGER_SERVICE } from './shared/shared.module';
-import { LogRequestInterceptor } from './shared/interceptors/log-request.interceptor';
+import { LOGGER_SERVICE } from './modules/shared/shared.module';
+import { LogRequestInterceptor } from './modules/shared/interceptors/log-request.interceptor';
 
 jest.mock('@nestjs/core', () => ({ NestFactory: { create: jest.fn() } }));
 jest.mock('@nestjs/common', () =>
   jest.requireActual<typeof import('@nestjs/common')>('@nestjs/common'),
 );
 jest.mock('./app.config', () => ({ AppConfig: class {} }));
-jest.mock('./shared/interceptors/log-request.interceptor', () => ({
+jest.mock('./modules/shared/interceptors/log-request.interceptor', () => ({
   LogRequestInterceptor: class {},
 }));
 jest.mock('./app.module', () => ({
   AppModule: class {},
   ObserveInstrument: jest.fn(),
 }));
-jest.mock('./shared/shared.module', () => ({
+jest.mock('./modules/shared/shared.module', () => ({
   LOGGER_SERVICE: Symbol('LOGGER_SERVICE'),
 }));
 jest.mock('@nestjs/swagger', () => ({

@@ -1,8 +1,8 @@
 import { Logger, Module, OnModuleInit } from '@nestjs/common';
 import { AppConfigModule } from './app.config.module';
-import { SharedModule } from './shared/shared.module';
-import { MetricsModule } from './metrics/metrics.module';
-import { HealthModule } from './health/health.module';
+import { HealthModule } from './modules/health/health.module';
+import { MetricsModule } from './modules/metrics/metrics.module';
+import { SharedModule } from './modules/shared/shared.module';
 
 @Module({
   imports: [

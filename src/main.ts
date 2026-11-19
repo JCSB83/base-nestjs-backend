@@ -4,8 +4,8 @@ import { AppModule } from './app.module';
 import { INestApplication, Logger, ValidationPipe } from '@nestjs/common';
 import { AppConfig } from './app.config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { LOGGER_SERVICE } from './shared/shared.module';
-import { LogRequestInterceptor } from './shared/interceptors/log-request.interceptor';
+import { LOGGER_SERVICE } from './modules/shared/shared.module';
+import { LogRequestInterceptor } from './modules/shared/interceptors/log-request.interceptor';
 
 function configureSwagger(app: INestApplication<any>, appConfig: AppConfig) {
   const documentBuilder = new DocumentBuilder()
